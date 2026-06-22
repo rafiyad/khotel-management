@@ -1,0 +1,19 @@
+package com.kaptaitourist.kaptaitourist.image.adapter.in.web.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.http.codec.multipart.FilePart;
+
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+public class ImageListRequestDto {
+    private String hotelId;
+    private String name;       // original filename, for display/audit only
+    private FilePart file;     // the actual bytes — what the server derives everything else from
+
+}
