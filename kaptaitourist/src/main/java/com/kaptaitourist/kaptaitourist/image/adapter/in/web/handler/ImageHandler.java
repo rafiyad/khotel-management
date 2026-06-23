@@ -50,7 +50,7 @@ public class ImageHandler {
         String imageId = request.pathVariable("imageId");
         return imageUseCase.findById(imageId)
                 .flatMap(responseDto -> ServerResponse.ok()
-                        .contentType(MediaType.IMAGE_JPEG)
+                        .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(responseDto))
                 .switchIfEmpty(ServerResponse.notFound().build());
     }

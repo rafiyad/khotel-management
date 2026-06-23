@@ -19,7 +19,7 @@ public class ImageRouterConfig {
         return RouterFunctions.route()
                 .nest(RequestPredicates.accept(MediaType.APPLICATION_JSON), builder -> builder
                         .POST(RouteNames.BASE_URL.concat(RouteNames.IMAGE).concat(RouteNames.SAVE).concat(RouteNames.HOTEL_ID), imageHandler::saveImage)
-                        .GET(RouteNames.BASE_URL.concat(RouteNames.IMAGE).concat(RouteNames.FIND_BY_ID), imageHandler::getImageById)
+                        .GET(RouteNames.BASE_URL.concat(RouteNames.IMAGE).concat(RouteNames.FIND_BY_IMAGE_ID), imageHandler::getImageById)
                 )
                 .build();
     }

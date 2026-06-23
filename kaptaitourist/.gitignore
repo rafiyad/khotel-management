@@ -25,6 +25,7 @@ bin/
 out/
 !**/src/main/**/out/
 !**/src/test/**/out/
+.idea/misc.xml
 
 ### NetBeans ###
 /nbproject/private/
@@ -39,3 +40,11 @@ out/
 
 ### application properties ###
 application-local.properties
+
+
+### environment files ###
+.env
+.env.local
+.env.development
+.env.test
+.env.production
