@@ -32,4 +32,9 @@ public class ImageService implements ImageUseCase {
                 .doOnNext(response -> log.info("Image found with id: {}", id))
                 .doOnError(error -> log.error("Error finding image with id {}: {}", id, error.getMessage()));
     }
+
+    //generate image name
+    //image compression
+    //thumbnail generation
+
 }
