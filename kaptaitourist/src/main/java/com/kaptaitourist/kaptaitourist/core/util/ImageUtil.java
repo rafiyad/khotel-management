@@ -48,7 +48,7 @@ public class ImageUtil {
         String safeFilename  = originalFilename != null ? sanitize(originalFilename) : "image.jpg";
         String extension     = getExtension(safeFilename);
 //        String baseName      = String.valueOf(UUID.randomUUID());
-        String baseName      = originalFilename;
+        String baseName      = stripExtension(safeFilename);
 
 
         // Compress original (70% dimensions + 0.6 quality → ~25% of raw size)
@@ -137,6 +137,12 @@ public class ImageUtil {
     public String getExtension(String filename) {
         if (filename == null || !filename.contains(".")) return "jpg";
         return filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
+    }
+
+    private String stripExtension(String filename) {
+        int dot = filename.lastIndexOf('.');
+        // dot > 0 guards against dotfiles like ".env" collapsing to an empty name
+        return dot > 0 ? filename.substring(0, dot) : filename;
     }
 
     private String sanitize(String input) {

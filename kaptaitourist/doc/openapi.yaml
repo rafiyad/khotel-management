@@ -1,0 +1,460 @@
+openapi: 3.0.3
+info:
+  title: Kaptai Tourist - Image Module API
+  description: |
+    Endpoints for managing hotel images (upload, retrieve, update and delete).
+
+    Images are stored in object storage and indexed in the database. All write
+    endpoints that accept files use `multipart/form-data`; all read endpoints
+    return `application/json`.
+
+    Routes are nested under an `Accept: application/json` predicate, so every
+    request must send the `Accept: application/json` header.
+  version: 1.0.0
+servers:
+  - url: http://localhost:9090/api/v1
+    description: Local development
+tags:
+  - name: Image
+    description: Hotel image management
+
+paths:
+  /image/save/{hotelId}:
+    post:
+      tags:
+        - Image
+      summary: Upload one or more images for a hotel
+      description: |
+        Uploads one or more image files for the given hotel. Files must be sent
+        under the `files` multipart key. Returns the list of persisted image
+        records.
+      operationId: saveImage
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  description: One or more image files (required, at least one).
+                  items:
+                    type: string
+                    format: binary
+                createdBy:
+                  type: string
+                  description: Identifier of the user performing the upload.
+                  example: "01518472276"
+                isThumbnail:
+                  type: boolean
+                  description: Whether the uploaded image(s) should be flagged as thumbnail. Defaults to true when omitted.
+                  default: true
+                  example: true
+            encoding:
+              files:
+                contentType: image/png, image/jpeg, image/webp
+      responses:
+        '200':
+          description: Images uploaded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageListResponse'
+              example:
+                message: "Images saved successfully"
+                totalRecords: 1
+                imageData:
+                  - id: "a3f1c2d4-35e9-11ea-aec2-2e728ce88125"
+                    hotelId: "HTL-001"
+                    fileUrl: "https://storage.example.com/hotels/HTL-001/room.png"
+                    fileName: "room.png"
+                    fileSizeBytes: 204812
+                    isThumbnail: true
+                    thumbnailUrl: "https://storage.example.com/hotels/HTL-001/room_thumb.png"
+                    isPrimary: false
+                    displayOrder: 0
+                    version: 0
+                    mimeType: "image/png"
+                    createdBy: "01518472276"
+                    createdAt: "2025-09-21T15:33:27.429911"
+                    updatedBy: null
+                    updatedAt: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /image/{hotelId}:
+    get:
+      tags:
+        - Image
+      summary: Get all images for a hotel
+      description: Retrieves all image records belonging to the given hotel.
+      operationId: getAllByHotelId
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '200':
+          description: Images retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageListResponse'
+              example:
+                message: "Images fetched successfully"
+                totalRecords: 2
+                imageData:
+                  - id: "a3f1c2d4-35e9-11ea-aec2-2e728ce88125"
+                    hotelId: "HTL-001"
+                    fileUrl: "https://storage.example.com/hotels/HTL-001/room.png"
+                    fileName: "room.png"
+                    fileSizeBytes: 204812
+                    isThumbnail: true
+                    thumbnailUrl: "https://storage.example.com/hotels/HTL-001/room_thumb.png"
+                    isPrimary: true
+                    displayOrder: 0
+                    version: 0
+                    mimeType: "image/png"
+                    createdBy: "01518472276"
+                    createdAt: "2025-09-21T15:33:27.429911"
+                    updatedBy: null
+                    updatedAt: null
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Image
+      summary: Delete all images for a hotel
+      description: Deletes every image record (and associated stored files) for the given hotel.
+      operationId: deleteAllByHotelId
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '204':
+          description: All images for the hotel were deleted successfully. No content.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /image/{hotelId}/{imageId}:
+    get:
+      tags:
+        - Image
+      summary: Get a single image by id
+      description: Retrieves a single image record for the given hotel and image id.
+      operationId: getImageById
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/ImageId'
+      responses:
+        '200':
+          description: Image retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageSingleResponse'
+              example:
+                message: "Image fetched successfully"
+                imageData:
+                  id: "a3f1c2d4-35e9-11ea-aec2-2e728ce88125"
+                  hotelId: "HTL-001"
+                  fileUrl: "https://storage.example.com/hotels/HTL-001/room.png"
+                  fileName: "room.png"
+                  fileSizeBytes: 204812
+                  isThumbnail: true
+                  thumbnailUrl: "https://storage.example.com/hotels/HTL-001/room_thumb.png"
+                  isPrimary: false
+                  displayOrder: 0
+                  version: 0
+                  mimeType: "image/png"
+                  createdBy: "01518472276"
+                  createdAt: "2025-09-21T15:33:27.429911"
+                  updatedBy: null
+                  updatedAt: null
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      tags:
+        - Image
+      summary: Replace an existing image
+      description: |
+        Replaces the file of an existing image record. The new file must be sent
+        under the `file` multipart key.
+      operationId: updateImage
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/ImageId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Replacement image file (required).
+                updatedBy:
+                  type: string
+                  description: Identifier of the user performing the update.
+                  example: "01518472276"
+                isThumbnail:
+                  type: boolean
+                  description: Whether the image should be flagged as thumbnail. Left unchanged when omitted.
+                  example: false
+            encoding:
+              file:
+                contentType: image/png, image/jpeg, image/webp
+      responses:
+        '200':
+          description: Image updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageSingleResponse'
+              example:
+                message: "Image updated successfully"
+                imageData:
+                  id: "a3f1c2d4-35e9-11ea-aec2-2e728ce88125"
+                  hotelId: "HTL-001"
+                  fileUrl: "https://storage.example.com/hotels/HTL-001/room-v2.png"
+                  fileName: "room-v2.png"
+                  fileSizeBytes: 256000
+                  isThumbnail: false
+                  thumbnailUrl: "https://storage.example.com/hotels/HTL-001/room-v2_thumb.png"
+                  isPrimary: false
+                  displayOrder: 0
+                  version: 1
+                  mimeType: "image/png"
+                  createdBy: "01518472276"
+                  createdAt: "2025-09-21T15:33:27.429911"
+                  updatedBy: "01518472276"
+                  updatedAt: "2025-09-22T10:11:05.120004"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Image
+      summary: Delete a single image
+      description: Deletes a single image record (and its stored file) for the given hotel and image id.
+      operationId: deleteImage
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/ImageId'
+      responses:
+        '204':
+          description: Image deleted successfully. No content.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  parameters:
+    HotelId:
+      name: hotelId
+      in: path
+      required: true
+      description: Unique identifier of the hotel.
+      schema:
+        type: string
+      example: "HTL-001"
+    ImageId:
+      name: imageId
+      in: path
+      required: true
+      description: Unique identifier of the image.
+      schema:
+        type: string
+      example: "a3f1c2d4-35e9-11ea-aec2-2e728ce88125"
+
+  schemas:
+    Image:
+      type: object
+      description: A persisted hotel image record.
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the image.
+          example: "a3f1c2d4-35e9-11ea-aec2-2e728ce88125"
+        hotelId:
+          type: string
+          description: Identifier of the hotel this image belongs to.
+          example: "HTL-001"
+        fileUrl:
+          type: string
+          description: Public URL of the stored image file.
+          example: "https://storage.example.com/hotels/HTL-001/room.png"
+        fileName:
+          type: string
+          description: Original file name.
+          example: "room.png"
+        fileSizeBytes:
+          type: integer
+          format: int64
+          description: Size of the file in bytes.
+          example: 204812
+        isThumbnail:
+          type: boolean
+          description: Whether this image is flagged as a thumbnail.
+          example: true
+        thumbnailUrl:
+          type: string
+          nullable: true
+          description: URL of the generated thumbnail, if any.
+          example: "https://storage.example.com/hotels/HTL-001/room_thumb.png"
+        isPrimary:
+          type: boolean
+          description: Whether this is the primary image for the hotel.
+          example: false
+        displayOrder:
+          type: integer
+          description: Ordering position used when listing images.
+          example: 0
+        version:
+          type: integer
+          format: int64
+          nullable: true
+          description: Optimistic-locking version number.
+          example: 0
+        mimeType:
+          type: string
+          description: MIME type of the stored file.
+          example: "image/png"
+        createdBy:
+          type: string
+          nullable: true
+          description: Identifier of the user who created the record.
+          example: "01518472276"
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the record was created.
+          example: "2025-09-21T15:33:27.429911"
+        updatedBy:
+          type: string
+          nullable: true
+          description: Identifier of the user who last updated the record.
+          example: "01518472276"
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the record was last updated.
+          example: "2025-09-22T10:11:05.120004"
+
+    ImageListResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Human-readable result message.
+          example: "Images saved successfully"
+        totalRecords:
+          type: integer
+          description: Number of image records returned.
+          example: 1
+        imageData:
+          type: array
+          description: List of image records.
+          items:
+            $ref: '#/components/schemas/Image'
+
+    ImageSingleResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Human-readable result message.
+          example: "Image fetched successfully"
+        imageData:
+          $ref: '#/components/schemas/Image'
+
+    ErrorResponse:
+      type: object
+      required:
+        - status
+        - error
+        - message
+        - timestamp
+      properties:
+        status:
+          type: integer
+          description: HTTP status code associated with the error.
+          example: 400
+        error:
+          type: string
+          description: Short error category.
+          example: "Validation Error"
+        message:
+          type: string
+          description: Detailed error message.
+          example: "At least one file is required under the 'files' key"
+        timestamp:
+          type: string
+          format: date-time
+          description: Time when the error occurred.
+          example: "2025-09-21T15:33:27.429911"
+
+  responses:
+    BadRequest:
+      description: Bad Request - validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            ValidationError:
+              value:
+                status: 400
+                error: "Validation Error"
+                message: "At least one file is required under the 'files' key"
+                timestamp: "2025-09-21T15:33:27.429911"
+    NotFound:
+      description: Not Found - the requested image or hotel does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            NotFound:
+              value:
+                status: 404
+                error: "Not Found"
+                message: "No image found for the given id"
+                timestamp: "2025-09-21T15:33:27.429911"
+    InternalServerError:
+      description: Internal Server Error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            InternalError:
+              value:
+                status: 500
+                error: "Internal Server Error"
+                message: "Error occurred while processing the image"
+                timestamp: "2025-09-21T15:33:27.429911"
