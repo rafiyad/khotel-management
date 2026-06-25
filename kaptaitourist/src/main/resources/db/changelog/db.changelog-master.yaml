@@ -1,3 +1,15 @@
 databaseChangeLog:
-  - include:
-      file: db/changelog/create-image-table.sql
+  - changeSet:
+      id: create-image-table
+      author: rafiyad, tashfi
+      changes:
+        - sqlFile:
+            path: db/changelog/create-image-table.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: sample-khotel_attachment-data
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/sample-khotel_attachment-data.sql
+            relativeToChangelogFile: false

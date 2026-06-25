@@ -13,7 +13,6 @@ import org.springframework.http.codec.multipart.FilePart;
 @NoArgsConstructor
 public class ImageListRequestDto {
     private String hotelId;
-    private String name;       // original filename, for display/audit only
-    private FilePart file;     // the actual bytes — what the server derives everything else from
-
+    private Boolean isThumbnail;
+    private String createdBy;
 }

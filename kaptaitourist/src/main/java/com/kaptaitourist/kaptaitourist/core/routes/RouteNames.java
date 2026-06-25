@@ -5,5 +5,5 @@ public class RouteNames {
     public static final String IMAGE = "/image";
     public static final String FIND_BY_IMAGE_ID = "/{imageId}";
     public static final String HOTEL_ID = "/{hotelId}";
-    public static final String SAVE = "save";
+    public static final String SAVE = "/save";
 }

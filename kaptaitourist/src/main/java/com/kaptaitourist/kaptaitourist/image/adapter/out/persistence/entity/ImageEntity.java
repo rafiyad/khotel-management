@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -22,15 +23,20 @@ public class ImageEntity implements Persistable<String> {
     @Id
     private String id;
     private String hotelId;
-    private String fileUrl;
     private String fileName;
-    private int fileSizeBytes;
+    private long fileSizeBytes;
+    private String fileUrl;
+    private boolean isThumbnail;
+    private String thumbnailUrl;
     private String mimeType;
+    private boolean isPrimary;
+    private int displayOrder;
+    @Version
+    private Long version;
     private String createdBy;
     private LocalDateTime createdAt;
     private String updatedBy;
     private LocalDateTime updatedAt;
-    private boolean isDeleted;
 
 //    @Override
 //    public String getId() {

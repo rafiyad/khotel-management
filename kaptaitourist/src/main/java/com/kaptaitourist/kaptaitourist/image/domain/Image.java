@@ -17,14 +17,15 @@ public class Image {
     private String hotelId;
     private String fileUrl;
     private String fileName;
+    private long fileSizeBytes;
+    private Boolean isThumbnail;
+    private String thumbnailUrl;
     private boolean isPrimary;
     private int displayOrder;
     private Long version;
-    private int fileSizeBytes;
     private String mimeType;
     private String createdBy;
     private LocalDateTime createdAt;
     private String updatedBy;
     private LocalDateTime updatedAt;
-    private boolean isDeleted;
 }

@@ -1,6 +1,5 @@
 package com.kaptaitourist.kaptaitourist.image.adapter.out.persistence;
 
-
 import com.kaptaitourist.kaptaitourist.image.adapter.out.persistence.entity.ImageEntity;
 import com.kaptaitourist.kaptaitourist.image.adapter.out.persistence.repository.ImageRepository;
 import com.kaptaitourist.kaptaitourist.image.application.port.out.ImagePort;
@@ -9,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Component
@@ -21,19 +21,40 @@ public class ImageAdapter implements ImagePort {
 
     @Override
     public Mono<Image> save(Image image) {
-        log.info("Saving image to db: {}", image);
+        log.info("Saving image to db: {}", image.getFileName());
         return imageRepository.save(modelMapper.map(image, ImageEntity.class))
-                .map(imageEntity -> modelMapper.map(imageEntity, Image.class))
-                .doOnSuccess(savedImage -> log.info("Saved image to db: {}", savedImage))
-                .doOnError(error -> log.error("Error saving image to db: {}", error.getMessage()));
+                .map(entity -> modelMapper.map(entity, Image.class))
+                .doOnSuccess(saved -> log.info("Saved image with id: {}", saved.getId()))
+                .doOnError(e -> log.error("Error saving image: {}", e.getMessage()));
     }
 
     @Override
-    public Mono<Image> findById(String id) {
-        return imageRepository.findById(id)
-                .doOnRequest(request -> log.info("Finding image from db with id: {}", id))
-                .map(imageEntity -> modelMapper.map(imageEntity, Image.class))
-                .doOnSuccess(image -> log.info("Mapped ImageEntity to KImage: {}", image))
-                .doOnError(error -> log.error("Error finding image with id {}: {}", id, error.getMessage()));
+    public Flux<Image> findAllByHotelId(String hotelId) {
+        log.info("Finding all images for hotelId: {}", hotelId);
+        return imageRepository.findAllByHotelId(hotelId)
+                .map(entity -> modelMapper.map(entity, Image.class))
+                .doOnError(e -> log.error("Error finding images for hotelId {}: {}", hotelId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Image> findByIdAndHotelId(String id, String hotelId) {
+        log.info("Finding image id: {} for hotelId: {}", id, hotelId);
+        return imageRepository.findByIdAndHotelId(id, hotelId)
+                .map(entity -> modelMapper.map(entity, Image.class))
+                .doOnError(e -> log.error("Error finding image id {} for hotelId {}: {}", id, hotelId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Void> DeleteByIdAndHotelId(String id, String hotelId) {
+        log.info("Deleting image id: {} for hotelId: {}", id, hotelId);
+        return imageRepository.DeleteByIdAndHotelId(id, hotelId)
+                .doOnError(e -> log.error("Error deleting image id {} for hotelId {}: {}", id, hotelId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Void> DeleteAllByHotelId(String hotelId) {
+        log.info("Deleting all images for hotelId: {}", hotelId);
+        return imageRepository.DeleteAllByHotelId(hotelId)
+                .doOnError(e -> log.error("Error deleting all images for hotelId {}: {}", hotelId, e.getMessage()));
     }
 }

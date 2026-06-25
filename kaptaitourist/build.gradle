@@ -32,6 +32,14 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+
+	// SSL on R2DBC connections (required by Supabase)
+	implementation 'io.netty:netty-tcnative-boringssl-static:2.0.78.Final'
+	// Image compression
+	implementation 'net.coobird:thumbnailator:0.4.21'
+	// HEIC/HEIF/HEVC decoding for ImageIO — add the SAME plugin your other project uses.
+	implementation 'com.twelvemonkeys.imageio:imageio-core:3.13.1'
+
 //    for showing logs
     implementation 'com.google.code.gson:gson:2.14.0'
     implementation 'org.modelmapper:modelmapper:3.2.6'

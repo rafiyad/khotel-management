@@ -6,14 +6,11 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @Data
 @Builder
-@AllArgsConstructor
 @NoArgsConstructor
-public class ImageListResponseDto {
+@AllArgsConstructor
+public class ImageSingleResponseDto {
     private String message;
-    private int totalRecords;
-    private List<Image> imageData;
+    private Image imageData;
 }
