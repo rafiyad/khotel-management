@@ -35,6 +35,13 @@ databaseChangeLog:
             path: db/changelog/create-facility-link-tables.sql
             relativeToChangelogFile: false
   - changeSet:
+      id: create-booking-table
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/create-booking-table.sql
+            relativeToChangelogFile: false
+  - changeSet:
       id: sample-khotel_hotel-data
       author: rafiyad
       changes:

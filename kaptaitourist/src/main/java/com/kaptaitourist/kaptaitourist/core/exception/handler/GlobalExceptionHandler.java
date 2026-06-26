@@ -1,5 +1,6 @@
 package com.kaptaitourist.kaptaitourist.core.exception.handler;
 
+import com.kaptaitourist.kaptaitourist.core.exception.BookingNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.FacilityNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.HotelNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.ImageNotFoundException;
@@ -34,6 +35,9 @@ public class GlobalExceptionHandler {
             return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
         }
         if (ex instanceof FacilityNotFoundException) {
+            return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+        }
+        if (ex instanceof BookingNotFoundException) {
             return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
         }
         ex.printStackTrace();

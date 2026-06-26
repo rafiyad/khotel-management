@@ -1,4 +1,4 @@
-package com.kaptaitourist.kaptaitourist.Room.adapter.out.persistence.entity;
+package com.kaptaitourist.kaptaitourist.booking.adapter.out.persistence.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -10,6 +10,7 @@ import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Table;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
@@ -18,21 +19,21 @@ import java.util.UUID;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Table("khotel_room")
-public class RoomEntity implements Persistable<String>{
+@Table("khotel_booking")
+public class BookingEntity implements Persistable<String> {
     @Id
     private String id;
     private String hotelId;
-    private String roomName;
-    private int capacity;
-    private int totalUnits;
-    private String roomType;
-    private boolean isAirConditioned;
-    private String description;
-    private String prerequisites;
-    private BigDecimal pricePerNight;
-    private BigDecimal discount;
-    private boolean isAvailable;
+    private String roomId;
+    private LocalDate checkIn;
+    private LocalDate checkOut;
+    private int units;
+    private String guestName;
+    private String guestPhone;
+    private String guestEmail;
+    private Integer numberOfGuests;
+    private String status;
+    private BigDecimal totalPrice;
     @Version
     private Long version;
     private String createdBy;

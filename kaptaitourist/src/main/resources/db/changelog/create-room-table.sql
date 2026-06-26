@@ -3,7 +3,8 @@ CREATE TABLE IF NOT EXISTS khotel_room
     id                 VARCHAR(36)                 NOT NULL,
     hotel_id           VARCHAR(36)                 NOT NULL,
     room_name          VARCHAR(255)                NOT NULL,
-    capacity           INTEGER                     NOT NULL DEFAULT 1,
+    capacity           INTEGER                     NOT NULL DEFAULT 1,   -- guests per unit
+    total_units        INTEGER                     NOT NULL DEFAULT 1,   -- physical rooms of this type (e.g. 7 Premium rooms)
     room_type          VARCHAR(64),
     is_air_conditioned BOOLEAN                     NOT NULL DEFAULT FALSE,
     description        TEXT,

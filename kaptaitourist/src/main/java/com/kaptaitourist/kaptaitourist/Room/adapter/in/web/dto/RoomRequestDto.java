@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 public class RoomRequestDto {
     private String roomName;
     private Integer capacity;
+    private Integer totalUnits;
     private String roomType;
     private Boolean isAirConditioned;
     private String description;

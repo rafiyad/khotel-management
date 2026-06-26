@@ -22,6 +22,8 @@ tags:
     description: Hotel image management
   - name: Facility
     description: Facility catalog (CRUD) and assignment of facilities to hotels and rooms.
+  - name: Booking
+    description: Date-aware room-type bookings. Availability is computed (total_units − overlapping non-cancelled units), not a stored counter.
 
 paths:
   /hotel:
@@ -603,6 +605,154 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /hotel/{hotelId}/room/{roomId}/availability:
+    get:
+      tags:
+        - Booking
+      summary: Check room-type availability for a date range
+      description: Returns units available (total_units − overlapping non-cancelled bookings) for the dates.
+      operationId: checkAvailability
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+        - name: checkIn
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: "2026-07-01"
+        - name: checkOut
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: "2026-07-03"
+        - name: units
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+          example: 1
+      responses:
+        '200':
+          description: Availability computed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/room/{roomId}/booking:
+    post:
+      tags:
+        - Booking
+      summary: Create a booking for a room type
+      description: |
+        Books `units` of the room type for `[checkIn, checkOut)`. Runs in a transaction with a
+        row lock to prevent overselling. Returns 400 if not enough units are available for the
+        dates, the dates are invalid, or check-in is in the past; 404 if the room is missing.
+      operationId: createBooking
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+            example:
+              checkIn: "2026-07-01"
+              checkOut: "2026-07-03"
+              units: 1
+              guestName: "Rafiyad"
+              guestPhone: "+8801700000000"
+              guestEmail: "guest@example.com"
+              numberOfGuests: 2
+              createdBy: "admin"
+      responses:
+        '201':
+          description: Booking confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/booking:
+    get:
+      tags:
+        - Booking
+      summary: List a hotel's bookings
+      operationId: getHotelBookings
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '200':
+          description: Bookings retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/booking/{bookingId}:
+    get:
+      tags:
+        - Booking
+      summary: Get a booking by id
+      operationId: getBookingById
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Booking retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/booking/{bookingId}/cancel:
+    post:
+      tags:
+        - Booking
+      summary: Cancel a booking
+      description: Sets the booking status to CANCELLED, which frees its units for the dates. Idempotent.
+      operationId: cancelBooking
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Booking cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /image/save/{hotelId}:
     post:
       tags:
@@ -889,6 +1039,14 @@ components:
       schema:
         type: string
       example: "11111111-aaaa-0000-0000-000000000001"
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      description: Unique identifier of the booking.
+      schema:
+        type: string
+      example: "c1d2e3f4-aaaa-bbbb-cccc-000000000001"
 
   schemas:
     Image:
@@ -1150,7 +1308,12 @@ components:
           example: "Deluxe King"
         capacity:
           type: integer
+          description: Guests per unit.
           example: 2
+        totalUnits:
+          type: integer
+          description: Number of physical rooms of this type (e.g. 7 Premium rooms).
+          example: 7
         roomType:
           type: string
           nullable: true
@@ -1210,8 +1373,12 @@ components:
           example: "Deluxe King"
         capacity:
           type: integer
-          description: Defaults to 1 when omitted.
+          description: Guests per unit. Defaults to 1 when omitted.
           example: 2
+        totalUnits:
+          type: integer
+          description: Number of physical rooms of this type. Defaults to 1 when omitted.
+          example: 7
         roomType:
           type: string
           example: "DELUXE"
@@ -1426,6 +1593,156 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AssignedFacility'
+
+    Booking:
+      type: object
+      description: A reservation of a room type for a date range.
+      properties:
+        id:
+          type: string
+          example: "c1d2e3f4-aaaa-bbbb-cccc-000000000001"
+        hotelId:
+          type: string
+          example: "1111"
+        roomId:
+          type: string
+          example: "b7e2d1a0-1111-2222-3333-444455556666"
+        checkIn:
+          type: string
+          format: date
+          example: "2026-07-01"
+        checkOut:
+          type: string
+          format: date
+          example: "2026-07-03"
+        units:
+          type: integer
+          example: 1
+        guestName:
+          type: string
+          example: "Rafiyad"
+        guestPhone:
+          type: string
+          nullable: true
+        guestEmail:
+          type: string
+          nullable: true
+        numberOfGuests:
+          type: integer
+          nullable: true
+          example: 2
+        status:
+          type: string
+          enum: [CONFIRMED, CANCELLED]
+          example: "CONFIRMED"
+        totalPrice:
+          type: number
+          format: double
+          nullable: true
+          description: Snapshot = nights × units × (pricePerNight − discount).
+          example: 5800.00
+        version:
+          type: integer
+          format: int64
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    BookingRequest:
+      type: object
+      required:
+        - checkIn
+        - checkOut
+        - guestName
+      properties:
+        checkIn:
+          type: string
+          format: date
+          example: "2026-07-01"
+        checkOut:
+          type: string
+          format: date
+          description: Must be after checkIn.
+          example: "2026-07-03"
+        units:
+          type: integer
+          description: Rooms of this type to book. Defaults to 1.
+          example: 1
+        guestName:
+          type: string
+          example: "Rafiyad"
+        guestPhone:
+          type: string
+        guestEmail:
+          type: string
+        numberOfGuests:
+          type: integer
+          example: 2
+        createdBy:
+          type: string
+
+    BookingResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Booking confirmed"
+        bookingData:
+          $ref: '#/components/schemas/Booking'
+
+    BookingListResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Bookings retrieved successfully"
+        totalRecords:
+          type: integer
+          example: 2
+        bookingData:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+
+    AvailabilityResponse:
+      type: object
+      properties:
+        roomId:
+          type: string
+        checkIn:
+          type: string
+          format: date
+        checkOut:
+          type: string
+          format: date
+        totalUnits:
+          type: integer
+          example: 7
+        bookedUnits:
+          type: integer
+          example: 2
+        availableUnits:
+          type: integer
+          example: 5
+        requestedUnits:
+          type: integer
+          example: 1
+        available:
+          type: boolean
+          description: True when availableUnits >= requestedUnits.
+          example: true
 
     ErrorResponse:
       type: object

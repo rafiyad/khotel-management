@@ -18,6 +18,7 @@ public class Room {
     private String id;
     private String roomName;
     private int capacity;
+    private int totalUnits;
     private String roomType;
     private boolean isAirConditioned;
     private String description;

@@ -51,6 +51,7 @@ image util).
 | **Room** | ✅ Implemented | Full CRUD nested under a hotel (`/hotel/{hotelId}/room`). Responses **embed the room's images** (batch-loaded to avoid N+1). Validates the parent hotel exists on create. |
 | **hotel** | ✅ Implemented | Full CRUD over `khotel_hotel` (create/list/get/update/delete) via the hexagonal stack. Responses don't yet embed rooms/images. |
 | **facility** | ✅ Implemented | Catalog CRUD (`khotel_facility`) + assign/list/unassign facilities to hotels and rooms via junction tables. `appliesTo` (HOTEL/ROOM/BOTH) is enforced on assignment. |
+| **booking** | ✅ Implemented | Date-aware bookings against a room type (`khotel_booking`). Availability is computed; booking runs in a transaction with a `FOR UPDATE` row lock to prevent overselling. Cancel frees units. |
 
 ## HTTP API
 
@@ -76,6 +77,16 @@ See `doc/openapi.yaml` for the image module spec (hotel endpoints not yet in the
 | GET | `/hotel/{hotelId}/room/{roomId}` | Get one room (404 if missing) |
 | PUT | `/hotel/{hotelId}/room/{roomId}` | Full update (404 if missing) |
 | DELETE | `/hotel/{hotelId}/room/{roomId}` | Delete (204; removes the room's images incl. storage) |
+
+**Booking** (date-aware; availability computed):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/hotel/{hotelId}/room/{roomId}/availability?checkIn&checkOut&units` | Units available for the dates |
+| POST | `/hotel/{hotelId}/room/{roomId}/booking` | Create a booking (201; 400 if sold out / bad dates) |
+| GET | `/hotel/{hotelId}/booking` | List a hotel's bookings |
+| GET | `/hotel/{hotelId}/booking/{bookingId}` | Get one booking |
+| POST | `/hotel/{hotelId}/booking/{bookingId}/cancel` | Cancel (frees units) |
 
 **Facility** (catalog + assignment):
 
@@ -122,9 +133,12 @@ legacy ids like `1111`/`HTL-001` and new UUIDs). Holds name, description, check-
 contact, address, map url, optimistic `version`, audit. No `imageUrl` column — hotel images
 live in `khotel_attachment` (`room_id IS NULL`).
 
-**`khotel_room`** — hard delete (no soft-delete flag), `NUMERIC(12,2)` money, optimistic
+**`khotel_room`** — represents a **room type**, not a single physical room. Has
+`total_units` (how many physical rooms of this type, e.g. 7 Premium) and `capacity`
+(guests per unit). Hard delete (no soft-delete flag), `NUMERIC(12,2)` money, optimistic
 `version`, `hotel_id NOT NULL` → FK `khotel_hotel(id) ON DELETE CASCADE`. Also has
-`is_air_conditioned` and `prerequisites`.
+`is_air_conditioned` and `prerequisites`. **Date-aware availability (units left for a
+date range) is NOT modeled yet** — needs a booking module (see Next steps).
 
 **`khotel_attachment`** — images for both hotels and rooms:
 - `hotel_id NOT NULL` (tenant scope) → FK `khotel_hotel(id) ON DELETE CASCADE`; `room_id` nullable → **NULL = hotel-level image, set = room-level image**.
@@ -135,6 +149,13 @@ live in `khotel_attachment` (`room_id IS NULL`).
 **Image ↔ room relationship:** one-to-many via `room_id` on the attachment table (no
 image URLs stored on the room row). `Room.images` is a `List<Image>`. This reuses the
 single image pipeline for both hotel and room galleries.
+
+**`khotel_booking`** — reservations against a room type. `check_in`/`check_out` (DATE),
+`units`, guest info, `status` (CONFIRMED/CANCELLED), `total_price` snapshot. FKs to hotel +
+room (`ON DELETE CASCADE`), `CHECK (check_out > check_in)`, partial index on
+`(room_id, check_in, check_out) WHERE status <> 'CANCELLED'` for the availability query.
+Availability = `total_units − SUM(overlapping non-cancelled units)`; booking locks the room
+row `FOR UPDATE` inside a `@Transactional` reactive tx to avoid overselling.
 
 **`khotel_facility`** — global, curated facility catalog (`name` unique, `applies_to` =
 HOTEL/ROOM/BOTH, `is_active`, version, audit). Shared across all tenants.
@@ -179,7 +200,8 @@ a hotel/room/facility removes its links — junctions are DB-only, no storage to
 
 ## Next steps (not yet built)
 
-1. **Embed rooms/images/facilities in hotel responses** — hotel CRUD returns hotel columns only; room responses embed images but not facilities yet.
+1. **Verify booking concurrency at runtime** — the oversell guard relies on a reactive `@Transactional` + `SELECT … FOR UPDATE` lock. The reactive `R2dbcTransactionManager` is auto-configured by Boot, but this path can't be compile-verified — needs a concurrent-booking test against the real DB.
+2. **Embed rooms/images/facilities in hotel responses** — hotel CRUD returns hotel columns only; room responses embed images but not facilities yet.
 2. **Room-image update (replace) endpoint** — currently you delete + re-upload; a `PUT` replace like the hotel-image one could be added.
 3. **Facility list N+1** — `findHotelFacilities`/`findRoomFacilities` do one catalog lookup per link; fine for small sets, but a JOIN/batch could replace it if facility counts grow.
 4. Make the `kaptai` bucket public (or implement signed URLs).
