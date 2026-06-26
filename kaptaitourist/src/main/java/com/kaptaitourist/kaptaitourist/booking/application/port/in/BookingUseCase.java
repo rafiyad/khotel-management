@@ -10,7 +10,7 @@ import java.time.LocalDate;
 
 public interface BookingUseCase {
 
-    Mono<BookingResponseDto> createBooking(String hotelId, String roomId, BookingRequestDto dto);
+    Mono<BookingResponseDto> createBooking(String hotelId, String roomId, String userId, BookingRequestDto dto);
 
     Mono<AvailabilityResponseDto> checkAvailability(String hotelId, String roomId,
                                                     LocalDate checkIn, LocalDate checkOut, int units);

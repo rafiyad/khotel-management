@@ -1,12 +1,16 @@
 package com.kaptaitourist.kaptaitourist.core.exception.handler;
 
 import com.kaptaitourist.kaptaitourist.core.exception.BookingNotFoundException;
+import com.kaptaitourist.kaptaitourist.core.exception.ConflictException;
 import com.kaptaitourist.kaptaitourist.core.exception.FacilityNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.HotelNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.ImageNotFoundException;
+import com.kaptaitourist.kaptaitourist.core.exception.InvalidCredentialsException;
 import com.kaptaitourist.kaptaitourist.core.exception.RoomNotFoundException;
+import com.kaptaitourist.kaptaitourist.core.exception.UserNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
 import com.kaptaitourist.kaptaitourist.core.exception.dto.ErrorResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -39,6 +43,21 @@ public class GlobalExceptionHandler {
         }
         if (ex instanceof BookingNotFoundException) {
             return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+        }
+        if (ex instanceof UserNotFoundException) {
+            return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+        }
+        if (ex instanceof InvalidCredentialsException) {
+            return buildResponse(HttpStatus.UNAUTHORIZED, "Unauthorized", ex.getMessage());
+        }
+        if (ex instanceof ConflictException) {
+            return buildResponse(HttpStatus.CONFLICT, "Conflict", ex.getMessage());
+        }
+        if (ex instanceof DataIntegrityViolationException) {
+            // e.g. a concurrent duplicate that slipped past the app-level check and hit a UNIQUE constraint.
+            // Use a generic message — never leak raw DB/constraint details.
+            return buildResponse(HttpStatus.CONFLICT, "Conflict",
+                    "A record with the same unique value already exists");
         }
         ex.printStackTrace();
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", ex.getMessage());

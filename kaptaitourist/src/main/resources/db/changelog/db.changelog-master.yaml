@@ -42,6 +42,20 @@ databaseChangeLog:
             path: db/changelog/create-booking-table.sql
             relativeToChangelogFile: false
   - changeSet:
+      id: create-user-tables
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/create-user-tables.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: create-hotel-owner-table
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/create-hotel-owner-table.sql
+            relativeToChangelogFile: false
+  - changeSet:
       id: sample-khotel_hotel-data
       author: rafiyad
       changes:

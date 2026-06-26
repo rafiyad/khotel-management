@@ -24,9 +24,11 @@ public class HotelHandler {
     // ─────────────────────────────── Create ──────────────────────────────────
 
     public Mono<ServerResponse> createHotel(ServerRequest request) {
-        return request.bodyToMono(HotelRequestDto.class)
-                .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
-                .flatMap(hotelUseCase::createHotel)
+        return request.principal()
+                .switchIfEmpty(Mono.error(new ValidationException("Authentication required")))
+                .flatMap(principal -> request.bodyToMono(HotelRequestDto.class)
+                        .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
+                        .flatMap(dto -> hotelUseCase.createHotel(dto, principal.getName())))
                 .flatMap(result -> ServerResponse.status(HttpStatus.CREATED)
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(result))

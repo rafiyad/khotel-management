@@ -52,6 +52,7 @@ image util).
 | **hotel** | ✅ Implemented | Full CRUD over `khotel_hotel` (create/list/get/update/delete) via the hexagonal stack. Responses don't yet embed rooms/images. |
 | **facility** | ✅ Implemented | Catalog CRUD (`khotel_facility`) + assign/list/unassign facilities to hotels and rooms via junction tables. `appliesTo` (HOTEL/ROOM/BOTH) is enforced on assignment. |
 | **booking** | ✅ Implemented | Date-aware bookings against a room type (`khotel_booking`). Availability is computed; booking runs in a transaction with a `FOR UPDATE` row lock to prevent overselling. Cancel frees units. |
+| **user / auth** | ✅ Phase 1 + 2 | Spring Security (reactive) + JWT, RBAC + **ownership**. Register/login/me, admin user mgmt, bootstrap ADMIN. All endpoints now authorized: public browse, login-required booking, owner-only hotel management, admin-only catalog/users. |
 
 ## HTTP API
 
@@ -77,6 +78,30 @@ See `doc/openapi.yaml` for the image module spec (hotel endpoints not yet in the
 | GET | `/hotel/{hotelId}/room/{roomId}` | Get one room (404 if missing) |
 | PUT | `/hotel/{hotelId}/room/{roomId}` | Full update (404 if missing) |
 | DELETE | `/hotel/{hotelId}/room/{roomId}` | Delete (204; removes the room's images incl. storage) |
+
+**Auth / User** (RBAC — phase 1):
+
+| Method | Path | Access |
+|---|---|---|
+| POST | `/auth/register` | Public — creates a USER |
+| POST | `/auth/login` | Public — returns JWT |
+| GET | `/auth/me` | Authenticated |
+| GET | `/user` | ADMIN only |
+| POST | `/user/{userId}/promote` | ADMIN only — grants HOTEL_OWNER |
+
+Auth = `Authorization: Bearer <jwt>`. Roles seeded: USER / HOTEL_OWNER / ADMIN. A bootstrap
+ADMIN is created on startup from `app.admin.*` (default `admin@kaptai.local` / `Admin@12345`).
+
+**Authorization model (Phase 2)** — enforced in `core/security/SecurityConfig` + a
+`HotelOwnershipAuthorizationManager` that reads the `{hotelId}` path variable and checks
+`khotel_hotel_owner`:
+- **Public:** register, login, `GET /hotel` + `/hotel/{id}` rooms/images/facilities, availability, facility catalog reads.
+- **Authenticated (any user):** `POST .../booking` (recorded against the user), `/auth/me`.
+- **Owner of the hotel, or ADMIN:** all writes under `/hotel/{hotelId}/**` + flat `/image/.../{hotelId}`; booking list/get/cancel.
+- **ADMIN only:** facility catalog writes, `/user/**`.
+
+Creating a hotel inserts a `khotel_hotel_owner` row (creator = owner). `createdBy` on hotel
+and booking now comes from the token, not the request body.
 
 **Booking** (date-aware; availability computed):
 
@@ -150,6 +175,20 @@ date range) is NOT modeled yet** — needs a booking module (see Next steps).
 image URLs stored on the room row). `Room.images` is a `List<Image>`. This reuses the
 single image pipeline for both hotel and room galleries.
 
+**`khotel_user` / `khotel_role` / `khotel_user_role`** — auth + RBAC. Roles seeded
+(USER/HOTEL_OWNER/ADMIN); `khotel_user` holds a BCrypt `password_hash` (never returned) +
+`mobile` (NOT NULL). **`email` and `mobile` are both UNIQUE** (DB constraints + app-level
+checks). A duplicate registration returns **409 Conflict** (`ConflictException`); a
+concurrent duplicate that slips past the app check and hits the DB UNIQUE constraint is
+translated (`DataIntegrityViolationException` → 409 with a safe generic message). Register
+validates **email format**, **mobile format** (6–20 digits, optional `+`), and password
+length (≥ 6).
+`khotel_user_role` is the user↔role link (surrogate id + UNIQUE(user_id, role_id)).
+
+**`khotel_hotel_owner`** — user↔hotel ownership (surrogate id + UNIQUE(user_id, hotel_id),
+FKs to user + hotel, cascade). Drives the owner-only authorization. `khotel_booking` also
+gained a `user_id` (the authenticated booker).
+
 **`khotel_booking`** — reservations against a room type. `check_in`/`check_out` (DATE),
 `units`, guest info, `status` (CONFIRMED/CANCELLED), `total_price` snapshot. FKs to hotel +
 room (`ON DELETE CASCADE`), `CHECK (check_out > check_in)`, partial index on
@@ -200,7 +239,10 @@ a hotel/room/facility removes its links — junctions are DB-only, no storage to
 
 ## Next steps (not yet built)
 
-1. **Verify booking concurrency at runtime** — the oversell guard relies on a reactive `@Transactional` + `SELECT … FOR UPDATE` lock. The reactive `R2dbcTransactionManager` is auto-configured by Boot, but this path can't be compile-verified — needs a concurrent-booking test against the real DB.
+1. **Verify the authorization model at runtime** — the path-pattern rules, the `{hotelId}` variable extraction in `HotelOwnershipAuthorizationManager`, and `**`-matches-bare-path assumptions can only be confirmed by running. Test the matrix: anon browses, anon booking → 401, USER booking → 201, owner edits own hotel → 200, owner edits another hotel → 403, admin → all.
+2. **"My bookings" / cancel-own** — bookings now carry `user_id`; a USER currently can't list or cancel their own bookings (those routes are owner/admin). Add `/me/bookings` + allow the booker to cancel.
+3. **Source `createdBy` from token everywhere** — done for hotel + booking; room/image/facility writes still read `createdBy` from the body.
+4. **Verify booking concurrency at runtime** — the oversell guard relies on a reactive `@Transactional` + `SELECT … FOR UPDATE` lock. The reactive `R2dbcTransactionManager` is auto-configured by Boot, but this path can't be compile-verified — needs a concurrent-booking test against the real DB.
 2. **Embed rooms/images/facilities in hotel responses** — hotel CRUD returns hotel columns only; room responses embed images but not facilities yet.
 2. **Room-image update (replace) endpoint** — currently you delete + re-upload; a `PUT` replace like the hotel-image one could be added.
 3. **Facility list N+1** — `findHotelFacilities`/`findRoomFacilities` do one catalog lookup per link; fine for small sets, but a JOIN/batch could replace it if facility counts grow.

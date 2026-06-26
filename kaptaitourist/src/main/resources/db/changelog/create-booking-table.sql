@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS khotel_booking
     id               VARCHAR(36)                 NOT NULL,
     hotel_id         VARCHAR(36)                 NOT NULL,
     room_id          VARCHAR(36)                 NOT NULL,
+    user_id          VARCHAR(36),                          -- the authenticated guest who booked
+
     check_in         DATE                        NOT NULL,
     check_out        DATE                        NOT NULL,
     units            INTEGER                     NOT NULL DEFAULT 1,

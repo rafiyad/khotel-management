@@ -17,6 +17,7 @@ public class Booking {
     private String id;
     private String hotelId;
     private String roomId;
+    private String userId;
     private LocalDate checkIn;
     private LocalDate checkOut;
     private int units;

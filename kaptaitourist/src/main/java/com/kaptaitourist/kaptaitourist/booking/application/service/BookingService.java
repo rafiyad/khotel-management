@@ -35,7 +35,7 @@ public class BookingService implements BookingUseCase {
 
     @Override
     @Transactional
-    public Mono<BookingResponseDto> createBooking(String hotelId, String roomId, BookingRequestDto dto) {
+    public Mono<BookingResponseDto> createBooking(String hotelId, String roomId, String userId, BookingRequestDto dto) {
         if (dto.getGuestName() == null || dto.getGuestName().isBlank())
             return Mono.error(new ValidationException("guestName is required"));
         if (dto.getCheckIn() == null || dto.getCheckOut() == null)
@@ -65,6 +65,7 @@ public class BookingService implements BookingUseCase {
                                     Booking booking = Booking.builder()
                                             .hotelId(hotelId)
                                             .roomId(roomId)
+                                            .userId(userId)
                                             .checkIn(dto.getCheckIn())
                                             .checkOut(dto.getCheckOut())
                                             .units(units)
@@ -74,7 +75,7 @@ public class BookingService implements BookingUseCase {
                                             .numberOfGuests(dto.getNumberOfGuests())
                                             .status("CONFIRMED")
                                             .totalPrice(computeTotal(room, dto.getCheckIn(), dto.getCheckOut(), units))
-                                            .createdBy(dto.getCreatedBy())
+                                            .createdBy(userId)
                                             .createdAt(LocalDateTime.now())
                                             .build();
                                     return bookingPort.save(booking);

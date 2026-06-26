@@ -9,6 +9,10 @@ public class RouteNames {
     public static final String BOOKING = "/booking";
     public static final String AVAILABILITY = "/availability";
     public static final String CANCEL = "/cancel";
+    public static final String AUTH = "/auth";
+    public static final String USER = "/user";
+    public static final String USER_ID = "/{userId}";
+    public static final String PROMOTE = "/promote";
     public static final String FIND_BY_IMAGE_ID = "/{imageId}";
     public static final String HOTEL_ID = "/{hotelId}";
     public static final String ROOM_ID = "/{roomId}";

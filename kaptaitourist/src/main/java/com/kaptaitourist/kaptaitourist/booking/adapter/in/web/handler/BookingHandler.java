@@ -29,9 +29,11 @@ public class BookingHandler {
     public Mono<ServerResponse> createBooking(ServerRequest request) {
         String hotelId = request.pathVariable("hotelId");
         String roomId = request.pathVariable("roomId");
-        return request.bodyToMono(BookingRequestDto.class)
-                .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
-                .flatMap(dto -> bookingUseCase.createBooking(hotelId, roomId, dto))
+        return request.principal()
+                .switchIfEmpty(Mono.error(new ValidationException("Authentication required")))
+                .flatMap(principal -> request.bodyToMono(BookingRequestDto.class)
+                        .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
+                        .flatMap(dto -> bookingUseCase.createBooking(hotelId, roomId, principal.getName(), dto)))
                 .flatMap(result -> ServerResponse.status(HttpStatus.CREATED)
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(result))

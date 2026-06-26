@@ -6,6 +6,7 @@ import com.kaptaitourist.kaptaitourist.hotel.adapter.in.dto.HotelListResponseDto
 import com.kaptaitourist.kaptaitourist.hotel.adapter.in.dto.HotelRequestDto;
 import com.kaptaitourist.kaptaitourist.hotel.adapter.in.dto.HotelResponseDto;
 import com.kaptaitourist.kaptaitourist.hotel.application.port.in.HotelUseCase;
+import com.kaptaitourist.kaptaitourist.hotel.application.port.out.HotelOwnerPort;
 import com.kaptaitourist.kaptaitourist.hotel.application.port.out.HotelPort;
 import com.kaptaitourist.kaptaitourist.hotel.domain.Hotel;
 import com.kaptaitourist.kaptaitourist.image.application.port.in.ImageUseCase;
@@ -23,11 +24,12 @@ public class HotelService implements HotelUseCase {
 
     private final HotelPort hotelPort;
     private final ImageUseCase imageUseCase;
+    private final HotelOwnerPort hotelOwnerPort;
 
     // ----------------------------------- Create -------------------------------------------
 
     @Override
-    public Mono<HotelResponseDto> createHotel(HotelRequestDto dto) {
+    public Mono<HotelResponseDto> createHotel(HotelRequestDto dto, String creatorUserId) {
         if (dto.getName() == null || dto.getName().isBlank())
             return Mono.error(new ValidationException("Hotel name is required"));
 
@@ -41,16 +43,19 @@ public class HotelService implements HotelUseCase {
                 .website(dto.getWebsite())
                 .address(dto.getAddress())
                 .googleMapUrl(dto.getGoogleMapUrl())
-                .createdBy(dto.getCreatedBy())
+                .createdBy(creatorUserId)
                 .createdAt(LocalDateTime.now())
                 .build();
 
+        // Persist the hotel, then record the creator as an owner so they (and only they,
+        // plus admins) can manage it.
         return hotelPort.save(hotel)
+                .flatMap(saved -> hotelOwnerPort.assignOwner(creatorUserId, saved.getId()).thenReturn(saved))
                 .map(saved -> HotelResponseDto.builder()
                         .message("Hotel created successfully")
                         .hotelData(saved)
                         .build())
-                .doOnSuccess(r -> log.info("Created hotel id: {}", r.getHotelData().getId()))
+                .doOnSuccess(r -> log.info("Created hotel id: {} owned by {}", r.getHotelData().getId(), creatorUserId))
                 .doOnError(e -> log.error("Error creating hotel: {}", e.getMessage()));
     }
 

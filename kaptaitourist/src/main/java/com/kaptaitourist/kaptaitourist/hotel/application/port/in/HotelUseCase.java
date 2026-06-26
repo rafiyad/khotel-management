@@ -7,7 +7,7 @@ import reactor.core.publisher.Mono;
 
 public interface HotelUseCase {
 
-    Mono<HotelResponseDto> createHotel(HotelRequestDto dto);
+    Mono<HotelResponseDto> createHotel(HotelRequestDto dto, String creatorUserId);
 
     Mono<HotelListResponseDto> findAll();
 
