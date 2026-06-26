@@ -5,13 +5,17 @@ import com.kaptaitourist.kaptaitourist.core.exception.InvalidCredentialsExceptio
 import com.kaptaitourist.kaptaitourist.core.exception.UserNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
 import com.kaptaitourist.kaptaitourist.core.security.JwtService;
+import com.kaptaitourist.kaptaitourist.core.util.MaskUtil;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.AuthResponseDto;
+import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.ProfileDto;
+import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.ProfileResponseDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.LoginRequestDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.RegisterRequestDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.UserListResponseDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.UserResponseDto;
 import com.kaptaitourist.kaptaitourist.user.application.port.in.UserUseCase;
 import com.kaptaitourist.kaptaitourist.user.application.port.out.UserPort;
+import com.kaptaitourist.kaptaitourist.user.domain.Gender;
 import com.kaptaitourist.kaptaitourist.user.domain.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,9 +55,14 @@ public class UserService implements UserUseCase {
             return Mono.error(new ValidationException("mobile must be 6–20 digits, optionally prefixed with '+'"));
         if (dto.getPassword() == null || dto.getPassword().length() < 6)
             return Mono.error(new ValidationException("password must be at least 6 characters"));
+        if (dto.getGender() == null || dto.getGender().isBlank())
+            return Mono.error(new ValidationException("gender is required"));
 
         String email = dto.getEmail().trim().toLowerCase();
         String mobile = dto.getMobile().trim();
+        String gender = dto.getGender().trim().toUpperCase();
+        if (!Gender.isValid(gender))
+            return Mono.error(new ValidationException("gender must be MALE or FEMALE"));
 
         return userPort.existsByEmail(email)
                 .flatMap(emailTaken -> {
@@ -66,6 +75,7 @@ public class UserService implements UserUseCase {
                                 .name(dto.getName())
                                 .email(email)
                                 .mobile(mobile)
+                                .gender(gender)
                                 .passwordHash(passwordEncoder.encode(dto.getPassword()))
                                 .isActive(true)
                                 .createdBy("self-registration")
@@ -121,6 +131,26 @@ public class UserService implements UserUseCase {
                 .map(user -> UserResponseDto.builder()
                         .message("Current user")
                         .userData(user)
+                        .build());
+    }
+
+    // ----------------------------------- Profile (masked) ---------------------------------
+
+    @Override
+    public Mono<ProfileResponseDto> getProfile(String userId) {
+        return userPort.findById(userId)
+                .switchIfEmpty(Mono.error(new UserNotFoundException("User not found with id: " + userId)))
+                .map(user -> ProfileResponseDto.builder()
+                        .message("Profile")
+                        .profileData(ProfileDto.builder()
+                                .id(user.getId())
+                                .name(user.getName())
+                                .email(MaskUtil.maskEmail(user.getEmail()))
+                                .mobile(MaskUtil.maskMobile(user.getMobile()))
+                                .gender(user.getGender())
+                                .isActive(user.getIsActive())
+                                .roles(user.getRoles())
+                                .build())
                         .build());
     }
 

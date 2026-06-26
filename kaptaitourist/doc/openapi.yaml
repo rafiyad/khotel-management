@@ -10,12 +10,15 @@ info:
 
     ## Authorization (RBAC + ownership)
     Send the JWT from `POST /auth/login` as `Authorization: Bearer <token>`. Access rules:
-    - **Public (no token):** register, login, `GET /hotel`, `GET /hotel/{hotelId}` and its
-      rooms/images/facilities, `GET .../availability`, `GET /facility` (catalog reads).
-    - **Any authenticated user:** `POST .../booking` (booking requires login), `GET /auth/me`.
-    - **HOTEL_OWNER (only their own hotel) or ADMIN:** create/update/delete hotels, rooms,
-      images, and facility assignments under `/hotel/{hotelId}/**`; booking management
-      (list/get/cancel) for that hotel.
+    - **Public (no token):** register, login, `GET /hotel`, `GET /hotel/{hotelId}`, its rooms
+      (`GET .../room`, `GET .../room/{roomId}`), and `GET .../availability`. A USER can browse
+      hotels/rooms and **book** a room, but cannot create/update/delete hotels.
+    - **Any authenticated user:** `POST .../booking` (booking requires login), `GET /auth/me`, `GET /auth/profile`.
+    - **HOTEL_OWNER (their own hotel) or ADMIN:** create/update/delete hotels, rooms, and **all
+      image and facility-assignment endpoints — reads included** — under `/hotel/{hotelId}/**`
+      and `/image/...`; booking management (list/get/cancel) for that hotel. **Image and
+      facility endpoints are hidden from USER.** The facility **catalog** (`GET /facility`,
+      `/facility/{id}`) is visible to any HOTEL_OWNER or ADMIN.
     - **ADMIN only:** facility catalog writes (`POST/PUT/DELETE /facility`), user management
       (`/user/**`, promote).
 
@@ -333,6 +336,8 @@ paths:
         - Image
       summary: List a room's images
       operationId: getRoomImages
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/HotelId'
         - $ref: '#/components/parameters/RoomId'
@@ -463,6 +468,30 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /auth/profile:
+    get:
+      tags:
+        - Auth
+      summary: Get the current user's profile (masked)
+      description: |
+        Returns the authenticated user's own profile with **masked** contact details:
+        the mobile shows only the last 4 digits, and the email shows only the last 4
+        characters of the local part (before `@`).
+      operationId: getProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /user:
     get:
       tags:
@@ -549,6 +578,8 @@ paths:
         - Facility
       summary: List all facilities (catalog)
       operationId: getAllFacilities
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Facilities retrieved.
@@ -565,6 +596,8 @@ paths:
         - Facility
       summary: Get a facility by id
       operationId: getFacilityById
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/FacilityId'
       responses:
@@ -658,6 +691,8 @@ paths:
         - Facility
       summary: List a hotel's facilities
       operationId: getHotelFacilities
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/HotelId'
       responses:
@@ -727,6 +762,8 @@ paths:
         - Facility
       summary: List a room's facilities
       operationId: getRoomFacilities
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/HotelId'
         - $ref: '#/components/parameters/RoomId'
@@ -988,6 +1025,8 @@ paths:
       summary: Get all images for a hotel
       description: Retrieves all image records belonging to the given hotel.
       operationId: getAllByHotelId
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/HotelId'
       responses:
@@ -1044,6 +1083,8 @@ paths:
       summary: Get a single image by id
       description: Retrieves a single image record for the given hotel and image id.
       operationId: getImageById
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/HotelId'
         - $ref: '#/components/parameters/ImageId'
@@ -1924,6 +1965,7 @@ components:
         - name
         - email
         - mobile
+        - gender
         - password
       properties:
         name:
@@ -1938,6 +1980,11 @@ components:
           type: string
           description: Must be unique. 6–20 digits, optionally prefixed with '+'.
           example: "+8801700000000"
+        gender:
+          type: string
+          enum: [MALE, FEMALE]
+          description: Required. Case-insensitive on input; stored uppercase.
+          example: "MALE"
         password:
           type: string
           format: password
@@ -1994,6 +2041,11 @@ components:
           type: string
           nullable: true
           example: "+8801700000000"
+        gender:
+          type: string
+          enum: [MALE, FEMALE]
+          nullable: true
+          example: "MALE"
         isActive:
           type: boolean
           example: true
@@ -2029,6 +2081,46 @@ components:
           example: "Registration successful"
         userData:
           $ref: '#/components/schemas/User'
+
+    Profile:
+      type: object
+      description: A user's own profile view; email and mobile are masked.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Rafiyad"
+        email:
+          type: string
+          description: Masked — only the last 4 chars of the local part are shown.
+          example: "***iyad@example.com"
+        mobile:
+          type: string
+          description: Masked — only the last 4 digits are shown.
+          example: "**********2276"
+        gender:
+          type: string
+          enum: [MALE, FEMALE]
+          nullable: true
+          example: "MALE"
+        isActive:
+          type: boolean
+          example: true
+        roles:
+          type: array
+          items:
+            type: string
+          example: ["USER"]
+
+    ProfileResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Profile"
+        profileData:
+          $ref: '#/components/schemas/Profile'
 
     UserListResponse:
       type: object

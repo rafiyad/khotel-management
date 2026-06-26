@@ -13,6 +13,7 @@ public class RouteNames {
     public static final String USER = "/user";
     public static final String USER_ID = "/{userId}";
     public static final String PROMOTE = "/promote";
+    public static final String PROFILE = "/profile";
     public static final String FIND_BY_IMAGE_ID = "/{imageId}";
     public static final String HOTEL_ID = "/{hotelId}";
     public static final String ROOM_ID = "/{roomId}";

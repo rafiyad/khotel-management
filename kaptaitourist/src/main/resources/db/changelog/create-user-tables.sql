@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS khotel_user
     name          VARCHAR(255)                NOT NULL,
     email         VARCHAR(255)                NOT NULL,
     mobile        VARCHAR(32)                 NOT NULL,
+    gender        VARCHAR(20),
     password_hash VARCHAR(255)                NOT NULL,
     is_active     BOOLEAN                     NOT NULL DEFAULT TRUE,
     version       BIGINT                      NOT NULL DEFAULT 0,
@@ -29,7 +30,8 @@ CREATE TABLE IF NOT EXISTS khotel_user
     updated_at    TIMESTAMP WITHOUT TIME ZONE,
     CONSTRAINT pk_khotel_user PRIMARY KEY (id),
     CONSTRAINT uq_khotel_user_email UNIQUE (email),
-    CONSTRAINT uq_khotel_user_mobile UNIQUE (mobile)
+    CONSTRAINT uq_khotel_user_mobile UNIQUE (mobile),
+    CONSTRAINT chk_khotel_user_gender CHECK (gender IS NULL OR gender IN ('MALE', 'FEMALE'))
     );
 
 -- User ↔ role (a user may hold multiple roles). Surrogate id (R2DBC needs one).

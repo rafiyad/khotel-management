@@ -24,6 +24,7 @@ public class UserEntity implements Persistable<String> {
     private String name;
     private String email;
     private String mobile;
+    private String gender;
     private String passwordHash;
     private Boolean isActive;
     @Version

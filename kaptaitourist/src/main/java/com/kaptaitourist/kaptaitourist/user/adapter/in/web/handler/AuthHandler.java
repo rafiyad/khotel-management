@@ -62,6 +62,19 @@ public class AuthHandler {
                 .onErrorResume(exceptionHandler::handle);
     }
 
+    // ─────────────────────────────── Profile (masked) ────────────────────────
+
+    public Mono<ServerResponse> profile(ServerRequest request) {
+        return request.principal()
+                .switchIfEmpty(Mono.error(new InvalidCredentialsException("Not authenticated")))
+                .map(Principal::getName)
+                .flatMap(userUseCase::getProfile)
+                .flatMap(result -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(result))
+                .onErrorResume(exceptionHandler::handle);
+    }
+
     // ─────────────────────────────── Admin: list users ───────────────────────
 
     public Mono<ServerResponse> listUsers(ServerRequest request) {

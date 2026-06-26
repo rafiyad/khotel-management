@@ -23,6 +23,7 @@ public class AuthRouterConfig {
                         .POST(AUTH.concat("/register"), authHandler::register)
                         .POST(AUTH.concat("/login"), authHandler::login)
                         .GET(AUTH.concat("/me"), authHandler::me)
+                        .GET(AUTH.concat(RouteNames.PROFILE), authHandler::profile)
                         // Admin-only (enforced by SecurityConfig: /api/v1/user/** → ROLE_ADMIN)
                         .GET(USER, authHandler::listUsers)
                         .POST(USER.concat(RouteNames.USER_ID).concat(RouteNames.PROMOTE), authHandler::promote)

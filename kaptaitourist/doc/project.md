@@ -85,7 +85,8 @@ See `doc/openapi.yaml` for the image module spec (hotel endpoints not yet in the
 |---|---|---|
 | POST | `/auth/register` | Public — creates a USER |
 | POST | `/auth/login` | Public — returns JWT |
-| GET | `/auth/me` | Authenticated |
+| GET | `/auth/me` | Authenticated — full own record |
+| GET | `/auth/profile` | Authenticated — own profile with **masked** email/mobile |
 | GET | `/user` | ADMIN only |
 | POST | `/user/{userId}/promote` | ADMIN only — grants HOTEL_OWNER |
 
@@ -95,9 +96,9 @@ ADMIN is created on startup from `app.admin.*` (default `admin@kaptai.local` / `
 **Authorization model (Phase 2)** — enforced in `core/security/SecurityConfig` + a
 `HotelOwnershipAuthorizationManager` that reads the `{hotelId}` path variable and checks
 `khotel_hotel_owner`:
-- **Public:** register, login, `GET /hotel` + `/hotel/{id}` rooms/images/facilities, availability, facility catalog reads.
-- **Authenticated (any user):** `POST .../booking` (recorded against the user), `/auth/me`.
-- **Owner of the hotel, or ADMIN:** all writes under `/hotel/{hotelId}/**` + flat `/image/.../{hotelId}`; booking list/get/cancel.
+- **Public:** register, login, `GET /hotel` + `/hotel/{id}` + rooms, availability. (USER browses + books, but cannot create/update/delete hotels.)
+- **Authenticated (any user):** `POST .../booking` (recorded against the user), `/auth/me`, `/auth/profile`.
+- **Owner of the hotel, or ADMIN:** all of `/hotel/{hotelId}/**` + flat `/image/.../{hotelId}` **including reads** of images and facility assignments; booking list/get/cancel. **Image & facility endpoints are hidden from USER.** Facility **catalog** reads (`GET /facility`) → any HOTEL_OWNER or ADMIN.
 - **ADMIN only:** facility catalog writes, `/user/**`.
 
 Creating a hotel inserts a `khotel_hotel_owner` row (creator = owner). `createdBy` on hotel
@@ -182,8 +183,13 @@ checks). A duplicate registration returns **409 Conflict** (`ConflictException`)
 concurrent duplicate that slips past the app check and hits the DB UNIQUE constraint is
 translated (`DataIntegrityViolationException` → 409 with a safe generic message). Register
 validates **email format**, **mobile format** (6–20 digits, optional `+`), and password
-length (≥ 6).
+length (≥ 6), and **gender** (required; enum **MALE/FEMALE**, case-insensitive in, stored
+uppercase). `gender` is enforced both in the app (`Gender` enum) and the DB
+(`CHECK (gender IS NULL OR gender IN ('MALE','FEMALE'))`; NULL allowed for the seeded admin).
 `khotel_user_role` is the user↔role link (surrogate id + UNIQUE(user_id, role_id)).
+
+`GET /auth/profile` returns the user's own info with **masked** contact details (mobile →
+last 4 digits; email → last 4 chars of the local part before `@`) via `core/util/MaskUtil`.
 
 **`khotel_hotel_owner`** — user↔hotel ownership (surrogate id + UNIQUE(user_id, hotel_id),
 FKs to user + hotel, cascade). Drives the owner-only authorization. `khotel_booking` also
@@ -213,6 +219,12 @@ a hotel/room/facility removes its links — junctions are DB-only, no storage to
   `SPRING.R2DBC.*`, `SPRING.LIQUIBASE.*`, `SUPABASE.URL`, `SUPABASE.ANON.KEY`, `SUPABASE.STORAGE.BUCKET`.
 - DB: Supabase Postgres (pooler host). Storage bucket: **`kaptai`**.
 - Multipart limits: 4 MB/file, 20 MB/request. Images also hard-capped at 4 MB and validated to JPEG/PNG/WEBP/HEIC.
+- **CORS** (reactive, in `SecurityConfig`): a `CorsConfigurationSource` bean wired via
+  `http.cors(...)`; allowed origins from `app.cors.allowed-origins` (default
+  `http://localhost:3000`), methods GET/POST/PUT/PATCH/DELETE/OPTIONS, headers
+  Authorization/Content-Type/Accept, credentials allowed. `OPTIONS /**` is permitAll so the
+  browser preflight passes. (This is a WebFlux app — `WebMvcConfigurer`/`CorsRegistry` does
+  **nothing** here; CORS must go through the reactive Security chain.)
 
 ## Image pipeline (how upload works)
 
