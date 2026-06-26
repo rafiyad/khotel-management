@@ -7,6 +7,8 @@ import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.Collection;
+
 public interface ImageRepository extends R2dbcRepository<ImageEntity, String> {
 
     @Query("SELECT * FROM khotel_attachment WHERE id = :id")
@@ -14,6 +16,12 @@ public interface ImageRepository extends R2dbcRepository<ImageEntity, String> {
 
     @Query("SELECT * FROM khotel_attachment WHERE hotel_id = :hotelId ORDER BY display_order ASC")
     Flux<ImageEntity> findAllByHotelId(String hotelId);
+
+    @Query("SELECT * FROM khotel_attachment WHERE room_id = :roomId ORDER BY display_order ASC")
+    Flux<ImageEntity> findAllByRoomId(String roomId);
+
+    @Query("SELECT * FROM khotel_attachment WHERE room_id IN (:roomIds) ORDER BY display_order ASC")
+    Flux<ImageEntity> findAllByRoomIdIn(Collection<String> roomIds);
 
     @Query("SELECT * FROM khotel_attachment WHERE id = :id AND hotel_id = :hotelId")
     Mono<ImageEntity> findByIdAndHotelId(String id, String hotelId);
@@ -25,4 +33,15 @@ public interface ImageRepository extends R2dbcRepository<ImageEntity, String> {
     @Modifying
     @Query("DELETE FROM khotel_attachment WHERE hotel_id = :hotelId")
     Mono<Void> DeleteAllByHotelId(String hotelId);
+
+    @Query("SELECT * FROM khotel_attachment WHERE id = :id AND room_id = :roomId")
+    Mono<ImageEntity> findByIdAndRoomId(String id, String roomId);
+
+    @Modifying
+    @Query("DELETE FROM khotel_attachment WHERE id = :id AND room_id = :roomId")
+    Mono<Void> deleteByIdAndRoomId(String id, String roomId);
+
+    @Modifying
+    @Query("DELETE FROM khotel_attachment WHERE room_id = :roomId")
+    Mono<Void> deleteAllByRoomId(String roomId);
 }

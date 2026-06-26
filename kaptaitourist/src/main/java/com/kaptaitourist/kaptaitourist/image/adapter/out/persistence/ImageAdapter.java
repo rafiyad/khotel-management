@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.Collection;
+
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -37,6 +39,24 @@ public class ImageAdapter implements ImagePort {
     }
 
     @Override
+    public Flux<Image> findAllByRoomId(String roomId) {
+        log.info("Finding all images for roomId: {}", roomId);
+        return imageRepository.findAllByRoomId(roomId)
+                .map(entity -> modelMapper.map(entity, Image.class))
+                .doOnError(e -> log.error("Error finding images for roomId {}: {}", roomId, e.getMessage()));
+    }
+
+    @Override
+    public Flux<Image> findAllByRoomIdIn(Collection<String> roomIds) {
+        if (roomIds == null || roomIds.isEmpty()) {
+            return Flux.empty();
+        }
+        return imageRepository.findAllByRoomIdIn(roomIds)
+                .map(entity -> modelMapper.map(entity, Image.class))
+                .doOnError(e -> log.error("Error finding images for roomIds {}: {}", roomIds, e.getMessage()));
+    }
+
+    @Override
     public Mono<Image> findByIdAndHotelId(String id, String hotelId) {
         log.info("Finding image id: {} for hotelId: {}", id, hotelId);
         return imageRepository.findByIdAndHotelId(id, hotelId)
@@ -56,5 +76,27 @@ public class ImageAdapter implements ImagePort {
         log.info("Deleting all images for hotelId: {}", hotelId);
         return imageRepository.DeleteAllByHotelId(hotelId)
                 .doOnError(e -> log.error("Error deleting all images for hotelId {}: {}", hotelId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Image> findByIdAndRoomId(String id, String roomId) {
+        log.info("Finding image id: {} for roomId: {}", id, roomId);
+        return imageRepository.findByIdAndRoomId(id, roomId)
+                .map(entity -> modelMapper.map(entity, Image.class))
+                .doOnError(e -> log.error("Error finding image id {} for roomId {}: {}", id, roomId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Void> deleteByIdAndRoomId(String id, String roomId) {
+        log.info("Deleting image id: {} for roomId: {}", id, roomId);
+        return imageRepository.deleteByIdAndRoomId(id, roomId)
+                .doOnError(e -> log.error("Error deleting image id {} for roomId {}: {}", id, roomId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Void> deleteAllByRoomId(String roomId) {
+        log.info("Deleting all images for roomId: {}", roomId);
+        return imageRepository.deleteAllByRoomId(roomId)
+                .doOnError(e -> log.error("Error deleting all images for roomId {}: {}", roomId, e.getMessage()));
     }
 }

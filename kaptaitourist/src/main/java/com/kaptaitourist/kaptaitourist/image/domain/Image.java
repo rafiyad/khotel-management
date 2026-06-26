@@ -15,10 +15,10 @@ import java.time.LocalDateTime;
 public class Image {
     private String id;
     private String hotelId;
+    private String roomId;          // NULL = hotel-level image; set = room-level image
     private String fileUrl;
     private String fileName;
     private long fileSizeBytes;
-    private Boolean isThumbnail;
     private String thumbnailUrl;
     private boolean isPrimary;
     private int displayOrder;

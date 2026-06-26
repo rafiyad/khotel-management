@@ -1,12 +1,11 @@
 openapi: 3.0.3
 info:
-  title: Kaptai Tourist - Image Module API
+  title: Kaptai Tourist API
   description: |
-    Endpoints for managing hotel images (upload, retrieve, update and delete).
+    Backend API for the Kaptai Tourist hotel platform.
 
-    Images are stored in object storage and indexed in the database. All write
-    endpoints that accept files use `multipart/form-data`; all read endpoints
-    return `application/json`.
+    Covers hotel management and hotel/room images. Image write endpoints use
+    `multipart/form-data`; everything else is `application/json`.
 
     Routes are nested under an `Accept: application/json` predicate, so every
     request must send the `Accept: application/json` header.
@@ -15,10 +14,595 @@ servers:
   - url: http://localhost:9090/api/v1
     description: Local development
 tags:
+  - name: Hotel
+    description: Hotel management (CRUD)
+  - name: Room
+    description: Room management, nested under a hotel (CRUD). Responses embed the room's images.
   - name: Image
     description: Hotel image management
+  - name: Facility
+    description: Facility catalog (CRUD) and assignment of facilities to hotels and rooms.
 
 paths:
+  /hotel:
+    post:
+      tags:
+        - Hotel
+      summary: Create a hotel
+      description: Creates a new hotel. `name` is required.
+      operationId: createHotel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HotelRequest'
+            example:
+              name: "Lake View Resort"
+              description: "Lakeside resort with panoramic views of Kaptai Lake."
+              checkInTime: "14:00:00"
+              checkOutTime: "12:00:00"
+              mobile: "+8801700000000"
+              email: "info@lakeview.example"
+              website: "https://lakeview.example"
+              address: "Kaptai, Rangamati"
+              googleMapUrl: "https://maps.google.com/?q=Kaptai+Lake+View"
+              createdBy: "admin"
+      responses:
+        '201':
+          description: Hotel created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags:
+        - Hotel
+      summary: List all hotels
+      operationId: getAllHotels
+      responses:
+        '200':
+          description: Hotels retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}:
+    get:
+      tags:
+        - Hotel
+      summary: Get a hotel by id
+      operationId: getHotelById
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '200':
+          description: Hotel retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Hotel
+      summary: Update a hotel (full replace)
+      description: Replaces the hotel's fields. Omitted fields are set to null. `name` is required.
+      operationId: updateHotel
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HotelRequest'
+      responses:
+        '200':
+          description: Hotel updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Hotel
+      summary: Delete a hotel
+      description: Deletes the hotel, its rooms, and all their images (storage objects + DB rows are removed; images cleaned before the cascade).
+      operationId: deleteHotel
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '204':
+          description: Hotel deleted successfully. No content.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/room:
+    post:
+      tags:
+        - Room
+      summary: Create a room under a hotel
+      description: Creates a room for the given hotel. `roomName` is required; the hotel must exist (404 otherwise).
+      operationId: createRoom
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomRequest'
+            example:
+              roomName: "Deluxe King"
+              capacity: 2
+              roomType: "DELUXE"
+              isAirConditioned: true
+              description: "Spacious room with a king bed and lake view."
+              prerequisites: "Valid ID required at check-in."
+              pricePerNight: 1500.00
+              discount: 100.00
+              isAvailable: true
+              createdBy: "admin"
+      responses:
+        '201':
+          description: Room created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags:
+        - Room
+      summary: List a hotel's rooms
+      description: Returns all rooms for the hotel, each with its embedded images (ordered by display order).
+      operationId: getAllRooms
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '200':
+          description: Rooms retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/room/{roomId}:
+    get:
+      tags:
+        - Room
+      summary: Get a room by id
+      operationId: getRoomById
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        '200':
+          description: Room retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Room
+      summary: Update a room (full replace)
+      description: Replaces the room's fields. Omitted fields fall back to defaults. `roomName` is required.
+      operationId: updateRoom
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomRequest'
+      responses:
+        '200':
+          description: Room updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Room
+      summary: Delete a room
+      description: Deletes the room and all its images (storage objects + image rows are removed first, then the room).
+      operationId: deleteRoom
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        '204':
+          description: Room deleted successfully. No content.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/room/{roomId}/image:
+    post:
+      tags:
+        - Image
+      summary: Upload one or more images for a room
+      description: |
+        Uploads image files for the given room (sets both hotelId and roomId).
+        Files must be sent under the `files` multipart key.
+      operationId: saveRoomImage
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  description: One or more image files (required, at least one).
+                  items:
+                    type: string
+                    format: binary
+                createdBy:
+                  type: string
+                  example: "admin"
+                isThumbnail:
+                  type: boolean
+                  description: Whether the server should generate a 400×300 thumbnail for each image. Defaults to true.
+                  default: true
+            encoding:
+              files:
+                contentType: image/png, image/jpeg, image/webp
+      responses:
+        '200':
+          description: Images uploaded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags:
+        - Image
+      summary: List a room's images
+      operationId: getRoomImages
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        '200':
+          description: Images retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Image
+      summary: Delete all images for a room
+      description: Deletes every image of the room (DB rows + best-effort storage objects).
+      operationId: deleteAllRoomImages
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        '204':
+          description: All room images deleted. No content.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/room/{roomId}/image/{imageId}:
+    delete:
+      tags:
+        - Image
+      summary: Delete a single room image
+      description: Deletes one image of the room (DB row + best-effort storage objects).
+      operationId: deleteRoomImage
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+        - $ref: '#/components/parameters/ImageId'
+      responses:
+        '204':
+          description: Image deleted. No content.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /facility:
+    post:
+      tags:
+        - Facility
+      summary: Create a facility (catalog)
+      description: Adds a facility to the global catalog. `name` is required and unique.
+      operationId: createFacility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacilityRequest'
+            example:
+              name: "Free WiFi"
+              category: "CONNECTIVITY"
+              icon: "wifi"
+              description: "Wireless internet access"
+              appliesTo: "BOTH"
+              isActive: true
+              createdBy: "admin"
+      responses:
+        '201':
+          description: Facility created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacilityResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags:
+        - Facility
+      summary: List all facilities (catalog)
+      operationId: getAllFacilities
+      responses:
+        '200':
+          description: Facilities retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacilityListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /facility/{facilityId}:
+    get:
+      tags:
+        - Facility
+      summary: Get a facility by id
+      operationId: getFacilityById
+      parameters:
+        - $ref: '#/components/parameters/FacilityId'
+      responses:
+        '200':
+          description: Facility retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacilityResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Facility
+      summary: Update a facility (full replace)
+      operationId: updateFacility
+      parameters:
+        - $ref: '#/components/parameters/FacilityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacilityRequest'
+      responses:
+        '200':
+          description: Facility updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacilityResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Facility
+      summary: Delete a facility
+      description: Removes the facility from the catalog and unassigns it from all hotels/rooms (cascade).
+      operationId: deleteFacility
+      parameters:
+        - $ref: '#/components/parameters/FacilityId'
+      responses:
+        '204':
+          description: Facility deleted. No content.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/facility:
+    post:
+      tags:
+        - Facility
+      summary: Assign a facility to a hotel
+      description: Assigns a catalog facility to the hotel with per-offering details. Idempotent (re-assigning updates the link). 404 if the hotel or facility is missing; 400 if the facility's appliesTo forbids HOTEL.
+      operationId: assignFacilityToHotel
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacilityAssignmentRequest'
+            example:
+              facilityId: "11111111-aaaa-0000-0000-000000000003"
+              isComplimentary: true
+              notes: "Open 6am–10pm"
+              createdBy: "admin"
+      responses:
+        '200':
+          description: Facility assigned to the hotel.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignedFacilityResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags:
+        - Facility
+      summary: List a hotel's facilities
+      operationId: getHotelFacilities
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '200':
+          description: Hotel facilities retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignedFacilityListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/facility/{facilityId}:
+    delete:
+      tags:
+        - Facility
+      summary: Unassign a facility from a hotel
+      operationId: unassignFacilityFromHotel
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/FacilityId'
+      responses:
+        '204':
+          description: Facility unassigned. No content.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/room/{roomId}/facility:
+    post:
+      tags:
+        - Facility
+      summary: Assign a facility to a room
+      description: Assigns a catalog facility to the room. Idempotent. 404 if the room or facility is missing; 400 if the facility's appliesTo forbids ROOM.
+      operationId: assignFacilityToRoom
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacilityAssignmentRequest'
+            example:
+              facilityId: "11111111-aaaa-0000-0000-000000000002"
+              isComplimentary: false
+              additionalCharge: 250.00
+              notes: "Per person, per night"
+              createdBy: "admin"
+      responses:
+        '200':
+          description: Facility assigned to the room.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignedFacilityResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags:
+        - Facility
+      summary: List a room's facilities
+      operationId: getRoomFacilities
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        '200':
+          description: Room facilities retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignedFacilityListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/room/{roomId}/facility/{facilityId}:
+    delete:
+      tags:
+        - Facility
+      summary: Unassign a facility from a room
+      operationId: unassignFacilityFromRoom
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+        - $ref: '#/components/parameters/RoomId'
+        - $ref: '#/components/parameters/FacilityId'
+      responses:
+        '204':
+          description: Facility unassigned. No content.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /image/save/{hotelId}:
     post:
       tags:
@@ -52,7 +636,7 @@ paths:
                   example: "01518472276"
                 isThumbnail:
                   type: boolean
-                  description: Whether the uploaded image(s) should be flagged as thumbnail. Defaults to true when omitted.
+                  description: Whether the server should generate a 400×300 thumbnail for each uploaded image. Defaults to true when omitted. (Note WebP cannot be thumbnailed and is skipped.)
                   default: true
                   example: true
             encoding:
@@ -74,7 +658,7 @@ paths:
                     fileUrl: "https://storage.example.com/hotels/HTL-001/room.png"
                     fileName: "room.png"
                     fileSizeBytes: 204812
-                    isThumbnail: true
+                    roomId: null
                     thumbnailUrl: "https://storage.example.com/hotels/HTL-001/room_thumb.png"
                     isPrimary: false
                     displayOrder: 0
@@ -116,7 +700,7 @@ paths:
                     fileUrl: "https://storage.example.com/hotels/HTL-001/room.png"
                     fileName: "room.png"
                     fileSizeBytes: 204812
-                    isThumbnail: true
+                    roomId: null
                     thumbnailUrl: "https://storage.example.com/hotels/HTL-001/room_thumb.png"
                     isPrimary: true
                     displayOrder: 0
@@ -172,7 +756,7 @@ paths:
                   fileUrl: "https://storage.example.com/hotels/HTL-001/room.png"
                   fileName: "room.png"
                   fileSizeBytes: 204812
-                  isThumbnail: true
+                  roomId: null
                   thumbnailUrl: "https://storage.example.com/hotels/HTL-001/room_thumb.png"
                   isPrimary: false
                   displayOrder: 0
@@ -217,7 +801,7 @@ paths:
                   example: "01518472276"
                 isThumbnail:
                   type: boolean
-                  description: Whether the image should be flagged as thumbnail. Left unchanged when omitted.
+                  description: Whether to (re)generate a thumbnail for the replacement image. When omitted, the server keeps the previous behaviour (regenerates a thumbnail only if the existing image had one).
                   example: false
             encoding:
               file:
@@ -237,7 +821,7 @@ paths:
                   fileUrl: "https://storage.example.com/hotels/HTL-001/room-v2.png"
                   fileName: "room-v2.png"
                   fileSizeBytes: 256000
-                  isThumbnail: false
+                  roomId: null
                   thumbnailUrl: "https://storage.example.com/hotels/HTL-001/room-v2_thumb.png"
                   isPrimary: false
                   displayOrder: 0
@@ -289,6 +873,22 @@ components:
       schema:
         type: string
       example: "a3f1c2d4-35e9-11ea-aec2-2e728ce88125"
+    RoomId:
+      name: roomId
+      in: path
+      required: true
+      description: Unique identifier of the room.
+      schema:
+        type: string
+      example: "b7e2d1a0-1111-2222-3333-444455556666"
+    FacilityId:
+      name: facilityId
+      in: path
+      required: true
+      description: Unique identifier of the facility.
+      schema:
+        type: string
+      example: "11111111-aaaa-0000-0000-000000000001"
 
   schemas:
     Image:
@@ -301,8 +901,13 @@ components:
           example: "a3f1c2d4-35e9-11ea-aec2-2e728ce88125"
         hotelId:
           type: string
-          description: Identifier of the hotel this image belongs to.
+          description: Identifier of the hotel this image belongs to (tenant scope).
           example: "HTL-001"
+        roomId:
+          type: string
+          nullable: true
+          description: Identifier of the room this image belongs to. NULL for hotel-level (gallery) images; set for room-level images.
+          example: null
         fileUrl:
           type: string
           description: Public URL of the stored image file.
@@ -316,14 +921,10 @@ components:
           format: int64
           description: Size of the file in bytes.
           example: 204812
-        isThumbnail:
-          type: boolean
-          description: Whether this image is flagged as a thumbnail.
-          example: true
         thumbnailUrl:
           type: string
           nullable: true
-          description: URL of the generated thumbnail, if any.
+          description: URL of the server-generated thumbnail (400×300). Null when no thumbnail was generated (e.g. WebP, or isThumbnail=false on upload).
           example: "https://storage.example.com/hotels/HTL-001/room_thumb.png"
         isPrimary:
           type: boolean
@@ -391,6 +992,440 @@ components:
           example: "Image fetched successfully"
         imageData:
           $ref: '#/components/schemas/Image'
+
+    Hotel:
+      type: object
+      description: A hotel record.
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the hotel (also used as hotelId everywhere).
+          example: "1111"
+        name:
+          type: string
+          example: "Lake View Resort"
+        description:
+          type: string
+          nullable: true
+        checkInTime:
+          type: string
+          nullable: true
+          description: Local check-in time (HH:mm:ss).
+          example: "14:00:00"
+        checkOutTime:
+          type: string
+          nullable: true
+          description: Local check-out time (HH:mm:ss).
+          example: "12:00:00"
+        mobile:
+          type: string
+          nullable: true
+          example: "+8801700000000"
+        email:
+          type: string
+          nullable: true
+          example: "info@lakeview.example"
+        website:
+          type: string
+          nullable: true
+          example: "https://lakeview.example"
+        address:
+          type: string
+          nullable: true
+          example: "Kaptai, Rangamati"
+        googleMapUrl:
+          type: string
+          nullable: true
+        version:
+          type: integer
+          format: int64
+          nullable: true
+          description: Optimistic-locking version.
+          example: 0
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        images:
+          type: array
+          nullable: true
+          description: Hotel images. Not yet embedded in responses (currently null).
+          items:
+            $ref: '#/components/schemas/Image'
+        rooms:
+          type: array
+          nullable: true
+          description: Hotel rooms. Not yet embedded in responses (currently null).
+          items:
+            type: object
+
+    HotelRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: "Lake View Resort"
+        description:
+          type: string
+        checkInTime:
+          type: string
+          description: Local check-in time (HH:mm:ss).
+          example: "14:00:00"
+        checkOutTime:
+          type: string
+          description: Local check-out time (HH:mm:ss).
+          example: "12:00:00"
+        mobile:
+          type: string
+          example: "+8801700000000"
+        email:
+          type: string
+          example: "info@lakeview.example"
+        website:
+          type: string
+          example: "https://lakeview.example"
+        address:
+          type: string
+          example: "Kaptai, Rangamati"
+        googleMapUrl:
+          type: string
+        createdBy:
+          type: string
+          description: Set on create.
+        updatedBy:
+          type: string
+          description: Set on update.
+
+    HotelResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Hotel created successfully"
+        hotelData:
+          $ref: '#/components/schemas/Hotel'
+
+    HotelListResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Hotels retrieved successfully"
+        totalRecords:
+          type: integer
+          example: 2
+        hotelData:
+          type: array
+          items:
+            $ref: '#/components/schemas/Hotel'
+
+    Room:
+      type: object
+      description: A room record with its embedded image gallery.
+      properties:
+        id:
+          type: string
+          example: "b7e2d1a0-1111-2222-3333-444455556666"
+        hotelId:
+          type: string
+          example: "1111"
+        hotelName:
+          type: string
+          nullable: true
+          description: Reserved; not yet populated.
+        roomName:
+          type: string
+          example: "Deluxe King"
+        capacity:
+          type: integer
+          example: 2
+        roomType:
+          type: string
+          nullable: true
+          example: "DELUXE"
+        isAirConditioned:
+          type: boolean
+          example: true
+        description:
+          type: string
+          nullable: true
+        prerequisites:
+          type: string
+          nullable: true
+        pricePerNight:
+          type: number
+          format: double
+          example: 1500.00
+        discount:
+          type: number
+          format: double
+          example: 100.00
+        isAvailable:
+          type: boolean
+          example: true
+        version:
+          type: integer
+          format: int64
+          nullable: true
+          example: 0
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        images:
+          type: array
+          description: The room's images, ordered by display order. Empty for a room with no images.
+          items:
+            $ref: '#/components/schemas/Image'
+
+    RoomRequest:
+      type: object
+      required:
+        - roomName
+      properties:
+        roomName:
+          type: string
+          example: "Deluxe King"
+        capacity:
+          type: integer
+          description: Defaults to 1 when omitted.
+          example: 2
+        roomType:
+          type: string
+          example: "DELUXE"
+        isAirConditioned:
+          type: boolean
+          example: true
+        description:
+          type: string
+        prerequisites:
+          type: string
+        pricePerNight:
+          type: number
+          format: double
+          description: Defaults to 0 when omitted.
+          example: 1500.00
+        discount:
+          type: number
+          format: double
+          description: Defaults to 0 when omitted.
+          example: 100.00
+        isAvailable:
+          type: boolean
+          description: Defaults to true when omitted.
+          example: true
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+
+    RoomResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Room created successfully"
+        roomData:
+          $ref: '#/components/schemas/Room'
+
+    RoomListResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Rooms retrieved successfully"
+        totalRecords:
+          type: integer
+          example: 3
+        roomData:
+          type: array
+          items:
+            $ref: '#/components/schemas/Room'
+
+    Facility:
+      type: object
+      description: A catalog facility.
+      properties:
+        id:
+          type: string
+          example: "11111111-aaaa-0000-0000-000000000001"
+        name:
+          type: string
+          example: "Free WiFi"
+        category:
+          type: string
+          nullable: true
+          example: "CONNECTIVITY"
+        icon:
+          type: string
+          nullable: true
+          example: "wifi"
+        description:
+          type: string
+          nullable: true
+        appliesTo:
+          type: string
+          enum: [HOTEL, ROOM, BOTH]
+          example: "BOTH"
+        isActive:
+          type: boolean
+          example: true
+        version:
+          type: integer
+          format: int64
+          nullable: true
+          example: 0
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FacilityRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: "Free WiFi"
+        category:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        appliesTo:
+          type: string
+          enum: [HOTEL, ROOM, BOTH]
+          description: Defaults to BOTH when omitted.
+        isActive:
+          type: boolean
+          description: Defaults to true when omitted.
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+
+    FacilityResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Facility created successfully"
+        facilityData:
+          $ref: '#/components/schemas/Facility'
+
+    FacilityListResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Facilities retrieved successfully"
+        totalRecords:
+          type: integer
+          example: 8
+        facilityData:
+          type: array
+          items:
+            $ref: '#/components/schemas/Facility'
+
+    FacilityAssignmentRequest:
+      type: object
+      required:
+        - facilityId
+      properties:
+        facilityId:
+          type: string
+          example: "11111111-aaaa-0000-0000-000000000003"
+        isComplimentary:
+          type: boolean
+          description: Whether this offering is free. Defaults to true.
+          example: true
+        additionalCharge:
+          type: number
+          format: double
+          nullable: true
+          description: Charge when not complimentary.
+          example: 250.00
+        notes:
+          type: string
+          nullable: true
+          example: "Open 6am–10pm"
+        createdBy:
+          type: string
+
+    AssignedFacility:
+      type: object
+      description: A facility as offered by a hotel/room — the catalog facility plus the link attributes.
+      properties:
+        facility:
+          $ref: '#/components/schemas/Facility'
+        isComplimentary:
+          type: boolean
+          example: true
+        additionalCharge:
+          type: number
+          format: double
+          nullable: true
+          example: 250.00
+        notes:
+          type: string
+          nullable: true
+
+    AssignedFacilityResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Facility assigned to hotel"
+        data:
+          $ref: '#/components/schemas/AssignedFacility'
+
+    AssignedFacilityListResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Hotel facilities retrieved successfully"
+        totalRecords:
+          type: integer
+          example: 3
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignedFacility'
 
     ErrorResponse:
       type: object

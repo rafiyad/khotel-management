@@ -53,10 +53,10 @@ public class ImageService implements ImageUseCase {
                     return storageService.uploadImage(file, dto.getHotelId(), generateThumbnail)
                             .map(uploaded -> Image.builder()
                                     .hotelId(dto.getHotelId())
+                                    .roomId(dto.getRoomId())
                                     .fileUrl(uploaded.getImageUrl())
                                     .fileName(uploaded.getImageName())
                                     .fileSizeBytes(uploaded.getFileSizeBytes())
-                                    .isThumbnail(generateThumbnail)
                                     .thumbnailUrl(uploaded.getThumbnailUrl())
                                     .isPrimary(false)
                                     .displayOrder(order)
@@ -113,7 +113,7 @@ public class ImageService implements ImageUseCase {
                 .switchIfEmpty(Mono.error(new ImageNotFoundException(
                         "Image not found with id: " + id + " for hotel: " + hotelId)))
                 .flatMap(existing -> {
-                    boolean generateThumbnail = isThumbnail != null ? isThumbnail : Boolean.TRUE.equals(existing.getIsThumbnail());
+                    boolean generateThumbnail = isThumbnail != null ? isThumbnail : existing.getThumbnailUrl() != null;
                     return storageService.uploadImage(newFile, hotelId, generateThumbnail)
                             .flatMap(uploaded -> {
                                 Mono<Void> deleteOld = Mono.when(
@@ -132,7 +132,6 @@ public class ImageService implements ImageUseCase {
                                         .fileUrl(uploaded.getImageUrl())
                                         .fileName(uploaded.getImageName())
                                         .fileSizeBytes(uploaded.getFileSizeBytes())
-                                        .isThumbnail(generateThumbnail)
                                         .thumbnailUrl(uploaded.getThumbnailUrl())
                                         .mimeType(uploaded.getMimeType())
                                         .isPrimary(existing.isPrimary())
@@ -190,5 +189,54 @@ public class ImageService implements ImageUseCase {
                 .then(imagePort.DeleteAllByHotelId(hotelId))
                 .doOnSuccess(v -> log.info("Deleted all images for hotelId: {}", hotelId))
                 .doOnError(e -> log.error("Error deleting all images for hotelId {}: {}", hotelId, e.getMessage()));
+    }
+
+    // ----------------------- Room-scoped image operations -------------------------------
+
+    @Override
+    public Mono<ImageListResponseDto> findAllByRoomId(String roomId) {
+        return imagePort.findAllByRoomId(roomId)
+                .collectList()
+                .map(list -> ImageListResponseDto.builder()
+                        .message("Images retrieved successfully")
+                        .totalRecords(list.size())
+                        .imageData(list)
+                        .build())
+                .doOnError(e -> log.error("Error finding images for roomId {}: {}", roomId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Void> deleteRoomImage(String roomId, String id) {
+        return imagePort.findByIdAndRoomId(id, roomId)
+                .switchIfEmpty(Mono.error(new ImageNotFoundException(
+                        "Image not found with id: " + id + " for room: " + roomId)))
+                .flatMap(existing -> Mono.when(
+                        storageService.deleteImage(existing.getFileUrl()),
+                        existing.getThumbnailUrl() != null
+                                ? storageService.deleteImage(existing.getThumbnailUrl())
+                                : Mono.empty()
+                ).onErrorResume(e -> {
+                    log.warn("Could not delete image file from storage: {}", e.getMessage());
+                    return Mono.empty();
+                }).then(imagePort.deleteByIdAndRoomId(id, roomId)))
+                .doOnSuccess(v -> log.info("Deleted image id: {} for roomId: {}", id, roomId))
+                .doOnError(e -> log.error("Error deleting image id {} for roomId {}: {}", id, roomId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Void> deleteAllByRoomId(String roomId) {
+        return imagePort.findAllByRoomId(roomId)
+                .flatMap(image -> Mono.when(
+                        storageService.deleteImage(image.getFileUrl()),
+                        image.getThumbnailUrl() != null
+                                ? storageService.deleteImage(image.getThumbnailUrl())
+                                : Mono.empty()
+                ).onErrorResume(e -> {
+                    log.warn("Could not delete image files from storage: {}", e.getMessage());
+                    return Mono.empty();
+                }))
+                .then(imagePort.deleteAllByRoomId(roomId))
+                .doOnSuccess(v -> log.info("Deleted all images for roomId: {}", roomId))
+                .doOnError(e -> log.error("Error deleting all images for roomId {}: {}", roomId, e.getMessage()));
     }
 }

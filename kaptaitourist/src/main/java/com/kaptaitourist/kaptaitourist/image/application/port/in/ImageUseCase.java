@@ -21,4 +21,12 @@ public interface ImageUseCase {
     Mono<Void> deleteImage(String id, String hotelId);
 
     Mono<Void> deleteAllByHotelId(String hotelId);
+
+    // ---- Room-scoped ----
+
+    Mono<ImageListResponseDto> findAllByRoomId(String roomId);
+
+    Mono<Void> deleteRoomImage(String roomId, String id);
+
+    Mono<Void> deleteAllByRoomId(String roomId);
 }

@@ -23,10 +23,10 @@ public class ImageEntity implements Persistable<String> {
     @Id
     private String id;
     private String hotelId;
+    private String roomId;          // NULL = hotel-level image; set = room-level image
     private String fileName;
     private long fileSizeBytes;
     private String fileUrl;
-    private boolean isThumbnail;
     private String thumbnailUrl;
     private String mimeType;
     private boolean isPrimary;

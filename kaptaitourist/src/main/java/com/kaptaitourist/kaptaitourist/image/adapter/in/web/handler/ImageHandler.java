@@ -134,6 +134,66 @@ public class ImageHandler {
                 .onErrorResume(exceptionHandler::handle);
     }
 
+    // ═══════════════════════════════ Room-scoped ═════════════════════════════
+
+    // Save (multi-file) for a room — sets both hotelId and roomId
+    public Mono<ServerResponse> saveRoomImage(ServerRequest request) {
+        String hotelId = request.pathVariable("hotelId");
+        String roomId  = request.pathVariable("roomId");
+
+        return request.multipartData()
+                .flatMap(multipart -> {
+                    List<FilePart> files = multipart.get("files") == null ? List.of()
+                            : multipart.get("files").stream()
+                            .filter(p -> p instanceof FilePart)
+                            .map(p -> (FilePart) p)
+                            .toList();
+
+                    if (files.isEmpty())
+                        return Mono.error(new ValidationException("At least one file is required under the 'files' key"));
+
+                    String createdBy = firstFormValue(multipart.getFirst("createdBy"));
+                    String thumbStr  = firstFormValue(multipart.getFirst("isThumbnail"));
+
+                    ImageListRequestDto dto = ImageListRequestDto.builder()
+                            .hotelId(hotelId)
+                            .roomId(roomId)
+                            .createdBy(createdBy)
+                            .isThumbnail(thumbStr != null ? Boolean.parseBoolean(thumbStr) : true)
+                            .build();
+
+                    return imageUseCase.saveImage(dto, files);
+                })
+                .flatMap(result -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(result))
+                .onErrorResume(exceptionHandler::handle);
+    }
+
+    public Mono<ServerResponse> getRoomImages(ServerRequest request) {
+        String roomId = request.pathVariable("roomId");
+        return imageUseCase.findAllByRoomId(roomId)
+                .flatMap(result -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(result))
+                .onErrorResume(exceptionHandler::handle);
+    }
+
+    public Mono<ServerResponse> deleteRoomImage(ServerRequest request) {
+        String roomId  = request.pathVariable("roomId");
+        String imageId = request.pathVariable("imageId");
+        return imageUseCase.deleteRoomImage(roomId, imageId)
+                .then(ServerResponse.noContent().build())
+                .onErrorResume(exceptionHandler::handle);
+    }
+
+    public Mono<ServerResponse> deleteAllRoomImages(ServerRequest request) {
+        String roomId = request.pathVariable("roomId");
+        return imageUseCase.deleteAllByRoomId(roomId)
+                .then(ServerResponse.noContent().build())
+                .onErrorResume(exceptionHandler::handle);
+    }
+
     // ─────────────────────────────── Helpers ─────────────────────────────────
 
     private String firstFormValue(Part part) {

@@ -1,6 +1,9 @@
 package com.kaptaitourist.kaptaitourist.core.exception.handler;
 
+import com.kaptaitourist.kaptaitourist.core.exception.FacilityNotFoundException;
+import com.kaptaitourist.kaptaitourist.core.exception.HotelNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.ImageNotFoundException;
+import com.kaptaitourist.kaptaitourist.core.exception.RoomNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
 import com.kaptaitourist.kaptaitourist.core.exception.dto.ErrorResponse;
 import org.springframework.http.HttpStatus;
@@ -22,6 +25,15 @@ public class GlobalExceptionHandler {
             return buildResponse(HttpStatus.BAD_REQUEST, "Validation Error", ex.getMessage());
         }
         if (ex instanceof ImageNotFoundException) {
+            return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+        }
+        if (ex instanceof HotelNotFoundException) {
+            return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+        }
+        if (ex instanceof RoomNotFoundException) {
+            return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+        }
+        if (ex instanceof FacilityNotFoundException) {
             return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
         }
         ex.printStackTrace();

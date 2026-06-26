@@ -13,6 +13,7 @@ import org.springframework.http.codec.multipart.FilePart;
 @NoArgsConstructor
 public class ImageListRequestDto {
     private String hotelId;
+    private String roomId;       // NULL = hotel-level upload; set = room-level upload
     private Boolean isThumbnail;
     private String createdBy;
 }

@@ -1,5 +1,19 @@
 databaseChangeLog:
   - changeSet:
+      id: create-hotel-table
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/create-hotel-table.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: create-room-table
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/create-room-table.sql
+            relativeToChangelogFile: false
+  - changeSet:
       id: create-image-table
       author: rafiyad, tashfi
       changes:
@@ -7,9 +21,37 @@ databaseChangeLog:
             path: db/changelog/create-image-table.sql
             relativeToChangelogFile: false
   - changeSet:
+      id: create-facility-table
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/create-facility-table.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: create-facility-link-tables
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/create-facility-link-tables.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: sample-khotel_hotel-data
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/sample-khotel_hotel-data.sql
+            relativeToChangelogFile: false
+  - changeSet:
       id: sample-khotel_attachment-data
       author: rafiyad
       changes:
         - sqlFile:
             path: db/changelog/sample-khotel_attachment-data.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: sample-khotel_facility-data
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/sample-khotel_facility-data.sql
             relativeToChangelogFile: false
