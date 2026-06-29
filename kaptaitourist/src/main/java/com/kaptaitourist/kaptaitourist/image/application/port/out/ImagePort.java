@@ -9,6 +9,7 @@ import java.util.Collection;
 public interface ImagePort {
     Mono<Image> save(Image image);
     Flux<Image> findAllByHotelId(String hotelId);
+    Flux<Image> findAllByHotelIdAndRoomIdIsNull(String hotelId);
     Flux<Image> findAllByRoomId(String roomId);
     Flux<Image> findAllByRoomIdIn(Collection<String> roomIds);
     Mono<Image> findByIdAndHotelId(String id, String hotelId);

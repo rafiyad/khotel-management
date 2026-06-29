@@ -39,6 +39,14 @@ public class ImageAdapter implements ImagePort {
     }
 
     @Override
+    public Flux<Image> findAllByHotelIdAndRoomIdIsNull(String hotelId) {
+        log.info("Finding all hotel-level images for hotelId: {}", hotelId);
+        return imageRepository.findAllByHotelIdAndRoomIdIsNull(hotelId)
+                .map(entity -> modelMapper.map(entity, Image.class))
+                .doOnError(e -> log.error("Error finding hotel-level images for hotelId {}: {}", hotelId, e.getMessage()));
+    }
+
+    @Override
     public Flux<Image> findAllByRoomId(String roomId) {
         log.info("Finding all images for roomId: {}", roomId);
         return imageRepository.findAllByRoomId(roomId)

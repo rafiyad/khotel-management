@@ -28,3 +28,12 @@ images on public room reads and require the dedicated (now-protected) image endp
 
 **Decision:** Left as-is for now per product call — room photos are arguably desirable for
 visitors browsing rooms. Revisit if images must be fully owner/admin-only.
+
+
+
+## 2. new (bug) need to fix next time
+
+1. Jpeg format showing 500 error with no reader found 
+2. hotel search don't include image in its profile
+3. if 2 image with same filename stores in the bucket, shows single same name image and stores only one image and
+ when deleted one file, as there is one file in the bucket, so that file got deleted, and we can't access the other file

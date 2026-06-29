@@ -1,22 +1,31 @@
 package com.kaptaitourist.kaptaitourist.core.util;
 
+import com.drew.imaging.ImageMetadataReader;
+import com.drew.metadata.Metadata;
+import com.drew.metadata.exif.ExifIFD0Directory;
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
+import lombok.extern.slf4j.Slf4j;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Component
 public class ImageUtil {
+
     private static final List<String> ALLOWED_TYPES = List.of(
             "image/jpeg", "image/jpg", "image/png", "image/webp",
             "image/heic", "image/heif"
     );
-    private static final List<String> HEIC_TYPES = List.of("image/heic", "image/heif");
+    private static final List<String> HEIF_TYPES = List.of("image/heic", "image/heif");
 
     // target: output is ~25% of original file size
     // achieved by scaling dimensions to 70% + quality 0.6
@@ -26,40 +35,48 @@ public class ImageUtil {
 
     private static final int THUMBNAIL_WIDTH  = 400;
     private static final int THUMBNAIL_HEIGHT = 300;
+    private static final long HEIF_CONVERT_TIMEOUT_SECONDS = 20;
 
     public ProcessedImage process(byte[] rawBytes, String contentType, String originalFilename,
                                   String identifier, boolean generateThumbnail) throws IOException {
 
-        // Validate content type first
         validateContentType(contentType);
 
-        // Hard limit: reject anything over 4MB before we even try to process
-        if (rawBytes.length > MAX_BYTES)
-            throw new ValidationException("Image must not exceed 4MB. Received: "
-                    + (rawBytes.length / 1024) + "KB");
-
-        // normalize HEIC/HEIF to JPEG before anything else touches it
-        String effectiveContentType = contentType.toLowerCase();
-        if (HEIC_TYPES.contains(effectiveContentType)) {
-            rawBytes = convertHeicToJpeg(rawBytes);
-            effectiveContentType = "image/jpeg";
+        if (rawBytes.length > MAX_BYTES) {
+            double sizeInMB = rawBytes.length / (1024.0 * 1024.0);
+            throw new ValidationException(
+                    String.format("Image must not exceed 4MB. Received: %.2fMB", sizeInMB));
         }
 
-        String safeFilename  = originalFilename != null ? sanitize(originalFilename) : "image.jpg";
-        String extension     = getExtension(safeFilename);
-//        String baseName      = String.valueOf(UUID.randomUUID());
-        String baseName      = stripExtension(safeFilename);
+        String effectiveContentType = contentType.toLowerCase();
+        if (HEIF_TYPES.contains(effectiveContentType)) {
+            rawBytes = convertHeicToJpeg(rawBytes);
+            effectiveContentType = "image/jpeg";
+            originalFilename = changeExtensionToJpg(originalFilename);
+        }
 
+        // Read orientation from whatever bytes are about to be compressed —
+        // works uniformly whether this came from a HEIC conversion or a plain
+        // JPEG upload. Single, deterministic source of truth; Thumbnailator's
+        // own EXIF auto-detection is explicitly disabled below to avoid any
+        // chance of it double-applying or silently failing.
+        int rotationDegrees = extractOrientationDegrees(rawBytes);
 
-        // Compress original (70% dimensions + 0.6 quality → ~25% of raw size)
-        byte[] originalBytes    = compress(rawBytes, extension, null, null, DIMENSION_SCALE);
+        String extension = switch (effectiveContentType) {
+            case "image/png" -> "png";
+            case "image/webp" -> "webp";
+            default -> "jpg";
+        };
+
+        String baseName = UUID.randomUUID().toString();
+
+        byte[] originalBytes = compress(rawBytes, extension, null, null, DIMENSION_SCALE, rotationDegrees);
         String originalFileName = baseName + "." + extension;
 
-        // Thumbnail variant — fixed 400×300 crop (only if requested)
-        byte[] thumbnailBytes    = null;
+        byte[] thumbnailBytes = null;
         String thumbnailFileName = null;
         if (generateThumbnail) {
-            thumbnailBytes    = compress(rawBytes, extension, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, null);
+            thumbnailBytes = compress(rawBytes, extension, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, null, rotationDegrees);
             thumbnailFileName = baseName + "_thumb." + extension;
         }
 
@@ -78,11 +95,13 @@ public class ImageUtil {
                 .build();
     }
 
-    private byte[] compress(byte[] bytes, String extension, Integer width, Integer height, Double scale)
-            throws IOException {
+    // ─────────────────────────────── Compression ──────────────────────────────
 
-        // WebP: Thumbnailator cannot encode WebP, pass through as-is
-        // PNG: cannot do lossy quality reduction, so lower dimensions more aggressively (50% instead of 70%)
+    private byte[] compress(byte[] bytes, String extension, Integer width, Integer height,
+                            Double scale, int rotationDegrees) throws IOException {
+
+        // WebP: Thumbnailator cannot encode WebP, pass through as-is.
+        // Note: rotation is NOT applied for WebP — pre-existing limitation.
         if (extension.equalsIgnoreCase("webp")) {
             return bytes;
         }
@@ -92,13 +111,18 @@ public class ImageUtil {
         var builder = Thumbnails.of(new ByteArrayInputStream(bytes));
 
         if (width != null && height != null) {
-//            builder.size(width, height).crop(Positions.CENTER);
             builder.size(width, height).keepAspectRatio(true);
         } else {
             // PNG gets more aggressive dimension scaling since it can't use lossy quality
             double effectiveScale = extension.equalsIgnoreCase("png") ? 0.50 : scale;
             builder.scale(effectiveScale);
         }
+
+        // Always disabled — we apply rotation ourselves, deterministically,
+        // based on metadata-extractor's read above. Thumbnailator's own
+        // built-in EXIF detection is known to be unreliable on some real-world
+        // JPEGs, so we don't depend on it at all, for any format.
+        builder.useExifOrientation(false);
 
         builder.outputFormat(format)
                 .outputQuality(OUTPUT_QUALITY)
@@ -107,24 +131,72 @@ public class ImageUtil {
         return out.toByteArray();
     }
 
-    // convertHeicToJpeg
-    private byte[] convertHeicToJpeg(byte[] heicBytes) throws IOException {
-        try (var bais = new java.io.ByteArrayInputStream(heicBytes);
-             var iis = javax.imageio.ImageIO.createImageInputStream(bais)) {
+    // ─────────────────────────────── Orientation ───────────────────────────────
+    private int extractOrientationDegrees(byte[] bytes) {
+        try {
+            Metadata metadata = ImageMetadataReader.readMetadata(new ByteArrayInputStream(bytes));
+            ExifIFD0Directory dir = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
+            if (dir != null && dir.containsTag(ExifIFD0Directory.TAG_ORIENTATION)) {
+                int orientation = dir.getInt(ExifIFD0Directory.TAG_ORIENTATION);
+                return switch (orientation) {
+                    case 6 -> 90;   // confirmed via exiftool: heif-convert output uses this value
+                    case 3 -> 180;
+                    case 8 -> 270;
+                    default -> 0;  // 1 = normal; mirrored variants (2,4,5,7) not handled
+                };
+            }
+        } catch (Exception e) {
+            log.warn("Could not read EXIF orientation, defaulting to no rotation: {}", e.getMessage());
+        }
+        return 0;
+    }
 
-            var readers = javax.imageio.ImageIO.getImageReadersByFormatName("HEIF");
-            if (!readers.hasNext()) {
-                throw new IOException("No HEIF reader found — check TwelveMonkeys HEIF dependency is on the classpath.");
+
+    // ─────────────────────────────── HEIC/HEIF conversion ──────────────────────
+    private byte[] convertHeicToJpeg(byte[] heicBytes) throws IOException {
+        Path tempHeic = Files.createTempFile("heic_", ".heic");
+        Path tempJpeg = Files.createTempFile("jpeg_", ".jpg");
+        try {
+            Files.write(tempHeic, heicBytes);
+
+            Process process = new ProcessBuilder(
+                    "heif-convert", "-q", "90",
+                    tempHeic.toString(), tempJpeg.toString()
+            ).redirectErrorStream(true).start();
+
+            boolean finished = process.waitFor(HEIF_CONVERT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            String processOutput = new String(process.getInputStream().readAllBytes());
+
+            if (!finished) {
+                process.destroyForcibly();
+                throw new IOException("heif-convert timed out after " + HEIF_CONVERT_TIMEOUT_SECONDS + "s");
+            }
+            if (process.exitValue() != 0) {
+                throw new IOException("heif-convert failed (exit " + process.exitValue() + "): " + processOutput);
             }
 
-            var reader = readers.next();
-            reader.setInput(iis);
-            var image = reader.read(0);
+            byte[] jpegBytes = Files.readAllBytes(tempJpeg);
 
-            var out = new ByteArrayOutputStream();
-            javax.imageio.ImageIO.write(image, "jpeg", out);
-            return out.toByteArray();
+            if (jpegBytes.length < 100 || jpegBytes[0] != (byte) 0xFF || jpegBytes[1] != (byte) 0xD8) {
+                throw new IOException("heif-convert produced an invalid JPEG (size=" + jpegBytes.length + " bytes)");
+            }
+
+            return jpegBytes;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("HEIF conversion interrupted", e);
+        } finally {
+            Files.deleteIfExists(tempHeic);
+            Files.deleteIfExists(tempJpeg);
         }
+    }
+
+    // ─────────────────────────────── Helpers ───────────────────────────────────
+
+    private String changeExtensionToJpg(String filename) {
+        if (filename == null) return "image.jpg";
+        int dot = filename.lastIndexOf('.');
+        return dot > 0 ? filename.substring(0, dot) + ".jpg" : filename + ".jpg";
     }
 
     private void validateContentType(String contentType) {
@@ -141,7 +213,6 @@ public class ImageUtil {
 
     private String stripExtension(String filename) {
         int dot = filename.lastIndexOf('.');
-        // dot > 0 guards against dotfiles like ".env" collapsing to an empty name
         return dot > 0 ? filename.substring(0, dot) : filename;
     }
 

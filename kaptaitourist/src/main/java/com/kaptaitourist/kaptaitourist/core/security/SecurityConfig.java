@@ -63,6 +63,7 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
+                .exceptionHandling(ex -> ex.accessDeniedHandler(new JwtAccessDeniedHandler()))
                 .authorizeExchange(ex -> ex
                         // CORS preflight must always be allowed through
                         .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
