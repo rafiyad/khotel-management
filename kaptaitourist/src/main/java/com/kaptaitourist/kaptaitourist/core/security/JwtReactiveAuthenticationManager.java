@@ -30,8 +30,10 @@ public class JwtReactiveAuthenticationManager implements ReactiveAuthenticationM
                 .map(claims -> {
                     String userId = claims.getSubject();
                     List<String> roles = claims.get("roles", List.class);
+                    // Authorities are plain role names (e.g. "ADMIN") to match role.name in the
+                    // RBAC tables. No "ROLE_" prefix — authorization is via RbacFilter, not hasRole().
                     List<SimpleGrantedAuthority> authorities = roles == null ? List.of()
-                            : roles.stream().map(r -> new SimpleGrantedAuthority("ROLE_" + r)).toList();
+                            : roles.stream().map(SimpleGrantedAuthority::new).toList();
                     Authentication auth = new UsernamePasswordAuthenticationToken(userId, token, authorities);
                     return auth;
                 })

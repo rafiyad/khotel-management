@@ -1,6 +1,5 @@
 package com.kaptaitourist.kaptaitourist.hotel.adapter.out.persistence;
 
-import com.kaptaitourist.kaptaitourist.core.security.OwnershipChecker;
 import com.kaptaitourist.kaptaitourist.hotel.adapter.out.persistence.entity.HotelOwnerEntity;
 import com.kaptaitourist.kaptaitourist.hotel.adapter.out.persistence.repository.HotelOwnerRepository;
 import com.kaptaitourist.kaptaitourist.hotel.application.port.out.HotelOwnerPort;
@@ -14,7 +13,7 @@ import java.time.LocalDateTime;
 @Component
 @Slf4j
 @RequiredArgsConstructor
-public class HotelOwnerAdapter implements HotelOwnerPort, OwnershipChecker {
+public class HotelOwnerAdapter implements HotelOwnerPort {
 
     private final HotelOwnerRepository hotelOwnerRepository;
 
@@ -30,10 +29,5 @@ public class HotelOwnerAdapter implements HotelOwnerPort, OwnershipChecker {
                                 .build())
                         .then())
                 .doOnError(e -> log.error("Error assigning owner {} to hotel {}: {}", userId, hotelId, e.getMessage()));
-    }
-
-    @Override
-    public Mono<Boolean> ownsHotel(String userId, String hotelId) {
-        return hotelOwnerRepository.existsByUserIdAndHotelId(userId, hotelId);
     }
 }

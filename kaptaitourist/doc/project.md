@@ -93,16 +93,25 @@ See `doc/openapi.yaml` for the image module spec (hotel endpoints not yet in the
 Auth = `Authorization: Bearer <jwt>`. Roles seeded: USER / HOTEL_OWNER / ADMIN. A bootstrap
 ADMIN is created on startup from `app.admin.*` (default `admin@kaptai.local` / `Admin@12345`).
 
-**Authorization model (Phase 2)** — enforced in `core/security/SecurityConfig` + a
-`HotelOwnershipAuthorizationManager` that reads the `{hotelId}` path variable and checks
-`khotel_hotel_owner`:
-- **Public:** register, login, `GET /hotel` + `/hotel/{id}` + rooms, availability. (USER browses + books, but cannot create/update/delete hotels.)
-- **Authenticated (any user):** `POST .../booking` (recorded against the user), `/auth/me`, `/auth/profile`.
-- **Owner of the hotel, or ADMIN:** all of `/hotel/{hotelId}/**` + flat `/image/.../{hotelId}` **including reads** of images and facility assignments; booking list/get/cancel. **Image & facility endpoints are hidden from USER.** Facility **catalog** reads (`GET /facility`) → any HOTEL_OWNER or ADMIN.
-- **ADMIN only:** facility catalog writes, `/user/**`.
+**Authorization model — data-driven RBAC.** `SecurityConfig` no longer carries any
+method/role rules: its `authorizeExchange` is `permitAll`, and its only job is to
+authenticate the JWT and populate the `SecurityContext`. Every endpoint is then authorized
+by **`core/filter/RbacFilter`** (a `WebFilter` ordered after the security chain), which calls
+`PermissionService.hasPermission(roles, url, method)`. That checks the request's method + URL
+template against the `permission` table (joined through `role_permission` to `role`); a
+`permission_name = 'ALL'` row means public. Roles come from the JWT as plain names (no
+`ROLE_` prefix — authorities are built as bare `ADMIN`/`USER`/`HOTEL_OWNER` to match
+`role.name`). Seeded matrix:
+- **Public (`ALL`):** register, login, `GET /hotel`, `/hotel/{id}`, rooms (list + detail), availability.
+- **USER:** `/auth/me`, `/auth/profile`, `POST .../booking`. (Browses via the public rows.)
+- **HOTEL_OWNER:** everything except user admin and facility-catalog writes — hotel/room/image/facility management, booking list/get/cancel, facility-catalog reads.
+- **ADMIN:** every protected endpoint, including `/user/**` and facility-catalog writes.
 
-Creating a hotel inserts a `khotel_hotel_owner` row (creator = owner). `createdBy` on hotel
-and booking now comes from the token, not the request body.
+> **Ownership dropped (regression vs. earlier).** Pure RBAC checks the *role*, not the
+> *resource* — so any HOTEL_OWNER can currently manage **any** hotel, not just their own.
+> The `HotelOwnershipAuthorizationManager` / `OwnershipChecker` were removed. `khotel_hotel_owner`
+> still records ownership (creator = owner on hotel create) for when ownership enforcement
+> is reintroduced. `createdBy` on hotel/booking comes from the token.
 
 **Booking** (date-aware; availability computed):
 
@@ -210,6 +219,16 @@ catalog to hotels/rooms. Surrogate `id` PK (R2DBC needs a single-column id) + UN
 (owner_id, facility_id). Per-offering qualifiers on the link: `is_complimentary`,
 `additional_charge`, `notes`. FKs to owner + facility, both `ON DELETE CASCADE` (deleting
 a hotel/room/facility removes its links — junctions are DB-only, no storage to clean).
+
+**`role` / `permission` / `role_permission`** — the data-driven RBAC engine (un-prefixed
+by design, matching the `core/rolepermission` code). `permission` = one row per endpoint:
+`permission_name` (`HOTEL.UPDATE`, or `ALL` for public), `url` (path template), `method`,
+`service_name`, optional `top_menu_id`/`left_menu_id`, `is_deleted`; partial-unique on
+`(url, method) WHERE is_deleted = false`. `role` mirrors the role names (USER/HOTEL_OWNER/
+ADMIN); `role_permission` links them. Seeded with all 42 endpoints + the role matrix.
+`RbacFilter` reads these on every request (raw-SQL joins in `PermissionRepository`; no
+entities for `role`/`role_permission`). **Note:** role *names* are duplicated here vs.
+`khotel_role` (which still drives user↔role membership + the JWT) — they must stay in sync.
 
 ## Configuration
 
