@@ -230,6 +230,29 @@ ADMIN); `role_permission` links them. Seeded with all 42 endpoints + the role ma
 entities for `role`/`role_permission`). **Note:** role *names* are duplicated here vs.
 `khotel_role` (which still drives user↔role membership + the JWT) — they must stay in sync.
 
+**Seed approach (`create-rbac-tables.sql`) — natural keys, not literal IDs.** All `id`s are
+UUID v4 from `gen_random_uuid()`; nothing references them by value. `role` and `permission`
+are seeded first (each row gets a random id). Then `role_permission` is populated with
+`INSERT … SELECT` statements that **join `role` × `permission` and select which rows by
+name**, letting the DB substitute the generated UUIDs:
+
+```sql
+-- "ADMIN may call every protected endpoint"
+INSERT INTO role_permission (id, role_id, permission_id)
+SELECT gen_random_uuid(), r.id, p.id
+FROM role r CROSS JOIN permission p
+WHERE r.name = 'ADMIN' AND p.permission_name <> 'ALL';
+```
+
+So the *endpoint → permission* link is the `url` + `method` columns on a `permission` row,
+and the *role → permission* link is expressed by `role.name` / `permission.permission_name`
+in three `INSERT … SELECT`s (ADMIN = all non-public; HOTEL_OWNER = all except `USER.*` and
+`FACILITY.{CREATE,UPDATE,DELETE}`; USER = `AUTH.ME`, `AUTH.PROFILE`, `BOOKING.CREATE`). The
+UUIDs are interchangeable join keys — re-seeding produces different IDs but the identical
+mapping. **Ordering requirement:** `role` + `permission` must be inserted before
+`role_permission`; they run sequentially in this one changeset, so don't split them without
+preserving that order.
+
 ## Configuration
 
 - Active profile: **dev** (`application.properties`). Profile config in `application-dev.properties`.
