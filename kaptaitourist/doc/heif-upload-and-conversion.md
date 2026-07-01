@@ -120,11 +120,13 @@ sudo apt-get install -y libheif-examples
 brew install libheif
 ```
 
-**Windows**
+**Windows** <br>
+```
 Native libheif does not install cleanly on plain Windows. Do HEIC testing
 inside **WSL2 (Ubuntu)** using the Ubuntu/Debian command above, or skip local
 testing of this specific feature and verify only in the Docker container (most
 Spring Boot apps deploy to Linux anyway).
+```
 
 ### 4.2 Server / production (Docker)
 
