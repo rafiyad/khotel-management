@@ -20,6 +20,7 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.Optional;
 
 
 @Order(Ordered.LOWEST_PRECEDENCE)   // run after the Spring Security chain so the SecurityContext is populated
@@ -43,14 +44,20 @@ public class RbacFilter implements WebFilter {
             return chain.filter(exchange);
         }
 
+        // Resolve whether an authenticated principal is present BEFORE invoking the chain.
+        // authorize(...) ends in chain.filter(exchange), a Mono<Void> that completes empty on
+        // success — so we must not use switchIfEmpty to model "no authentication", otherwise a
+        // successfully handled authenticated request (also empty) would re-trigger the filter and
+        // attempt to write to an already-committed response. Materialising the presence/absence of
+        // authentication into an Optional guarantees authorize(...) runs exactly once.
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .filter(authentication -> authentication != null && authentication.isAuthenticated())
                 .doOnNext(authentication -> log.info("RBAC filter authentication: {}", authentication))
-                // Authenticated caller: decide 200 vs 403 (Forbidden — logged in, but lacks permission).
-                .flatMap(authentication -> authorize(exchange, chain, authentication, path, method, false))
-                // No authentication in the context: decide 200 (public endpoint) vs 401 (Unauthorized).
-                .switchIfEmpty(Mono.defer(() -> authorize(exchange, chain, null, path, method, true)));
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(optionalAuth -> authorize(exchange, chain, optionalAuth.orElse(null),
+                        path, method, optionalAuth.isEmpty()));
     }
 
     private Mono<Void> authorize(ServerWebExchange exchange, WebFilterChain chain, Authentication authentication,

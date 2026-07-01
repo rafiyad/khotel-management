@@ -60,9 +60,11 @@ public class HotelHandler {
 
     public Mono<ServerResponse> updateHotel(ServerRequest request) {
         String hotelId = request.pathVariable("hotelId");
-        return request.bodyToMono(HotelRequestDto.class)
-                .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
-                .flatMap(dto -> hotelUseCase.updateHotel(hotelId, dto))
+        return request.principal()
+                .switchIfEmpty(Mono.error(new ValidationException("Authentication required")))
+                .flatMap(principal -> request.bodyToMono(HotelRequestDto.class)
+                        .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
+                        .flatMap(dto -> hotelUseCase.updateHotel(hotelId, dto, principal.getName())))
                 .flatMap(result -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(result))

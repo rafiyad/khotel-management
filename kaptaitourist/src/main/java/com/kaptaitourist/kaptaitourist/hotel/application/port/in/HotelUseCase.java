@@ -13,7 +13,7 @@ public interface HotelUseCase {
 
     Mono<HotelResponseDto> findById(String id);
 
-    Mono<HotelResponseDto> updateHotel(String id, HotelRequestDto dto);
+    Mono<HotelResponseDto> updateHotel(String id, HotelRequestDto dto, String updaterUserId);
 
     Mono<Void> deleteHotel(String id);
 }

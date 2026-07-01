@@ -25,6 +25,12 @@ public final class SecurityErrorWriter {
     }
 
     public static Mono<Void> write(ServerWebExchange exchange, HttpStatus status, String message) {
+        // Never attempt to mutate an already-committed response: its headers are read-only and
+        // setContentType(...) would throw UnsupportedOperationException.
+        if (exchange.getResponse().isCommitted()) {
+            return Mono.empty();
+        }
+
         exchange.getResponse().setStatusCode(status);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
