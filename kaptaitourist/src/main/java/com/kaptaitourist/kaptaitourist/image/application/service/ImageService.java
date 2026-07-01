@@ -44,34 +44,42 @@ public class ImageService implements ImageUseCase {
 
         boolean generateThumbnail = dto.getIsThumbnail() == null || dto.getIsThumbnail();
 
-        // concatMap preserves upload order; AtomicInteger assigns stable displayOrder
-        AtomicInteger orderCounter = new AtomicInteger(0);
+        // Append after the images already in this scope so displayOrder stays
+        // contiguous across uploads (hotel-level and room-level kept separate).
+        Flux<Image> existingInScope = dto.getRoomId() != null
+                ? imagePort.findAllByRoomId(dto.getRoomId())
+                : imagePort.findAllByHotelIdAndRoomIdIsNull(dto.getHotelId());
 
-        return Flux.fromIterable(files)
-                .flatMap(file -> {
-                    int order = orderCounter.getAndIncrement();
-                    return storageService.uploadImage(file, dto.getHotelId(), generateThumbnail)
-                            .map(uploaded -> Image.builder()
-                                    .hotelId(dto.getHotelId())
-                                    .roomId(dto.getRoomId())
-                                    .fileUrl(uploaded.getImageUrl())
-                                    .fileName(uploaded.getImageName())
-                                    .fileSizeBytes(uploaded.getFileSizeBytes())
-                                    .thumbnailUrl(uploaded.getThumbnailUrl())
-                                    .isPrimary(false)
-                                    .displayOrder(order)
-                                    .mimeType(uploaded.getMimeType())
-                                    .createdBy(dto.getCreatedBy())
-                                    .createdAt(LocalDateTime.now())
-                                    .build())
-                            .flatMap(imagePort::save);
-                })
-                .collectList()
-                .map(savedList -> ImageListResponseDto.builder()
-                        .message("Images uploaded successfully")
-                        .totalRecords(savedList.size())
-                        .imageData(savedList)
-                        .build())
+        return existingInScope.count().flatMap(existingCount -> {
+            // AtomicInteger assigns stable displayOrder starting from existing count
+            AtomicInteger orderCounter = new AtomicInteger(existingCount.intValue());
+
+            return Flux.fromIterable(files)
+                    .flatMap(file -> {
+                        int order = orderCounter.getAndIncrement();
+                        return storageService.uploadImage(file, dto.getHotelId(), generateThumbnail)
+                                .map(uploaded -> Image.builder()
+                                        .hotelId(dto.getHotelId())
+                                        .roomId(dto.getRoomId())
+                                        .fileUrl(uploaded.getImageUrl())
+                                        .fileName(uploaded.getImageName())
+                                        .fileSizeBytes(uploaded.getFileSizeBytes())
+                                        .thumbnailUrl(uploaded.getThumbnailUrl())
+                                        .isPrimary(false)
+                                        .displayOrder(order)
+                                        .mimeType(uploaded.getMimeType())
+                                        .createdBy(dto.getCreatedBy())
+                                        .createdAt(LocalDateTime.now())
+                                        .build())
+                                .flatMap(imagePort::save);
+                    })
+                    .collectList()
+                    .map(savedList -> ImageListResponseDto.builder()
+                            .message("Images uploaded successfully")
+                            .totalRecords(savedList.size())
+                            .imageData(savedList)
+                            .build());
+        })
                 .doOnSuccess(r -> log.info("Saved {} image(s) for hotelId: {}", r.getTotalRecords(), dto.getHotelId()))
                 .doOnError(e -> log.error("Error saving images for hotelId {}: {}", dto.getHotelId(), e.getMessage()));
     }
@@ -168,7 +176,8 @@ public class ImageService implements ImageUseCase {
                 ).onErrorResume(e -> {
                     log.warn("Could not delete image file from storage: {}", e.getMessage());
                     return Mono.empty();
-                }).then(imagePort.DeleteByIdAndHotelId(id, hotelId)))
+                }).then(imagePort.DeleteByIdAndHotelId(id, hotelId))
+                        .then(reorderScope(existing)))
                 .doOnSuccess(v -> log.info("Deleted image id: {} for hotelId: {}", id, hotelId))
                 .doOnError(e -> log.error("Error deleting image id {} for hotelId {}: {}", id, hotelId, e.getMessage()));
     }
@@ -218,7 +227,8 @@ public class ImageService implements ImageUseCase {
                 ).onErrorResume(e -> {
                     log.warn("Could not delete image file from storage: {}", e.getMessage());
                     return Mono.empty();
-                }).then(imagePort.deleteByIdAndRoomId(id, roomId)))
+                }).then(imagePort.deleteByIdAndRoomId(id, roomId))
+                        .then(reorderScope(existing)))
                 .doOnSuccess(v -> log.info("Deleted image id: {} for roomId: {}", id, roomId))
                 .doOnError(e -> log.error("Error deleting image id {} for roomId {}: {}", id, roomId, e.getMessage()));
     }
@@ -238,5 +248,26 @@ public class ImageService implements ImageUseCase {
                 .then(imagePort.deleteAllByRoomId(roomId))
                 .doOnSuccess(v -> log.info("Deleted all images for roomId: {}", roomId))
                 .doOnError(e -> log.error("Error deleting all images for roomId {}: {}", roomId, e.getMessage()));
+    }
+
+    // ----------------------- Reorder displayOrder after a delete --------------------------
+    // Renumbers the surviving images in the same scope to a contiguous 0..n-1 sequence,
+    // ordered by their current displayOrder. Hotel-level (roomId == null) and room-level
+    // images are reordered within their own scope. Only displayOrder is touched.
+    private Mono<Void> reorderScope(Image deleted) {
+        Flux<Image> scope = deleted.getRoomId() != null
+                ? imagePort.findAllByRoomId(deleted.getRoomId())
+                : imagePort.findAllByHotelIdAndRoomIdIsNull(deleted.getHotelId());
+
+        AtomicInteger counter = new AtomicInteger(0);
+        return scope.concatMap(image -> {
+                    int newOrder = counter.getAndIncrement();
+                    if (image.getDisplayOrder() == newOrder)
+                        return Mono.just(image);
+                    image.setDisplayOrder(newOrder);
+                    return imagePort.save(image);
+                })
+                .then()
+                .doOnError(e -> log.error("Error reordering images after delete: {}", e.getMessage()));
     }
 }

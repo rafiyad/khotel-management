@@ -2,6 +2,7 @@ package com.kaptaitourist.kaptaitourist.image.adapter.in.web.handler;
 
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
 import com.kaptaitourist.kaptaitourist.core.exception.handler.GlobalExceptionHandler;
+import com.kaptaitourist.kaptaitourist.core.security.UserContextService;
 import com.kaptaitourist.kaptaitourist.image.adapter.in.web.dto.ImageListRequestDto;
 import com.kaptaitourist.kaptaitourist.image.application.port.in.ImageUseCase;
 import lombok.RequiredArgsConstructor;
@@ -24,14 +25,17 @@ public class ImageHandler {
 
     private final ImageUseCase imageUseCase;
     private final GlobalExceptionHandler exceptionHandler;
+    private final UserContextService userContextService;
 
     // ─────────────────────────────── Save (multi-file) ───────────────────────
-
     public Mono<ServerResponse> saveImage(ServerRequest request) {
         String hotelId = request.pathVariable("hotelId");
 
-        return request.multipartData()
-                .flatMap(multipart -> {
+        return Mono.zip(request.multipartData(), userContextService.getCurrentUserLabel())
+                .flatMap(tuple -> {
+                    var multipart = tuple.getT1();
+                    String createdBy = tuple.getT2();
+
                     List<FilePart> files = multipart.get("files") == null ? List.of()
                             : multipart.get("files").stream()
                             .filter(p -> p instanceof FilePart)
@@ -41,8 +45,7 @@ public class ImageHandler {
                     if (files.isEmpty())
                         return Mono.error(new ValidationException("At least one file is required under the 'files' key"));
 
-                    String createdBy  = firstFormValue(multipart.getFirst("createdBy"));
-                    String thumbStr   = firstFormValue(multipart.getFirst("isThumbnail"));
+                    String thumbStr = firstFormValue(multipart.getFirst("isThumbnail"));
 
                     ImageListRequestDto dto = ImageListRequestDto.builder()
                             .hotelId(hotelId)
@@ -84,13 +87,15 @@ public class ImageHandler {
     }
 
     // ─────────────────────────────── Update ──────────────────────────────────
-
     public Mono<ServerResponse> updateImage(ServerRequest request) {
         String imageId = request.pathVariable("imageId");
         String hotelId = request.pathVariable("hotelId");
 
-        return request.multipartData()
-                .flatMap(multipart -> {
+        return Mono.zip(request.multipartData(), userContextService.getCurrentUserLabel())
+                .flatMap(tuple -> {
+                    var multipart = tuple.getT1();
+                    String updatedBy = tuple.getT2();
+
                     FilePart newFile = multipart.get("file") == null ? null
                             : multipart.get("file").stream()
                             .filter(p -> p instanceof FilePart)
@@ -101,8 +106,7 @@ public class ImageHandler {
                     if (newFile == null)
                         return Mono.error(new ValidationException("A replacement file is required under the 'file' key"));
 
-                    String updatedBy  = firstFormValue(multipart.getFirst("updatedBy"));
-                    String thumbStr   = firstFormValue(multipart.getFirst("isThumbnail"));
+                    String thumbStr = firstFormValue(multipart.getFirst("isThumbnail"));
                     Boolean isThumbnail = thumbStr != null ? Boolean.parseBoolean(thumbStr) : null;
 
                     return imageUseCase.updateImage(imageId, hotelId, newFile, isThumbnail, updatedBy);
@@ -141,8 +145,11 @@ public class ImageHandler {
         String hotelId = request.pathVariable("hotelId");
         String roomId  = request.pathVariable("roomId");
 
-        return request.multipartData()
-                .flatMap(multipart -> {
+        return Mono.zip(request.multipartData(), userContextService.getCurrentUserLabel())
+                .flatMap(tuple -> {
+                    var multipart = tuple.getT1();
+                    String createdBy = tuple.getT2();
+
                     List<FilePart> files = multipart.get("files") == null ? List.of()
                             : multipart.get("files").stream()
                             .filter(p -> p instanceof FilePart)
@@ -152,8 +159,7 @@ public class ImageHandler {
                     if (files.isEmpty())
                         return Mono.error(new ValidationException("At least one file is required under the 'files' key"));
 
-                    String createdBy = firstFormValue(multipart.getFirst("createdBy"));
-                    String thumbStr  = firstFormValue(multipart.getFirst("isThumbnail"));
+                    String thumbStr = firstFormValue(multipart.getFirst("isThumbnail"));
 
                     ImageListRequestDto dto = ImageListRequestDto.builder()
                             .hotelId(hotelId)

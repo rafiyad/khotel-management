@@ -61,6 +61,7 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
+                .exceptionHandling(ex -> ex.accessDeniedHandler(new JwtAccessDeniedHandler()))
                 // Authorization is delegated entirely to RbacFilter (data-driven, per-endpoint).
                 // This chain only authenticates the JWT and populates the SecurityContext; it
                 // permits everything so RbacFilter, running just after, can make the decision.

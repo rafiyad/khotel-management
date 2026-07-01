@@ -17,6 +17,9 @@ public interface ImageRepository extends R2dbcRepository<ImageEntity, String> {
     @Query("SELECT * FROM khotel_attachment WHERE hotel_id = :hotelId ORDER BY display_order ASC")
     Flux<ImageEntity> findAllByHotelId(String hotelId);
 
+    @Query("SELECT * FROM khotel_attachment WHERE hotel_id = :hotelId AND room_id IS NULL ORDER BY display_order ASC")
+    Flux<ImageEntity> findAllByHotelIdAndRoomIdIsNull(String hotelId);
+
     @Query("SELECT * FROM khotel_attachment WHERE room_id = :roomId ORDER BY display_order ASC")
     Flux<ImageEntity> findAllByRoomId(String roomId);
 
