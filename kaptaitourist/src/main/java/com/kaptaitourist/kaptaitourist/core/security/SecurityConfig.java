@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -25,7 +24,6 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtService jwtService;
-    private final HotelOwnershipAuthorizationManager ownership;
 
     /** Comma-separated list of allowed browser origins (e.g. the Next.js dev server). */
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
@@ -64,49 +62,10 @@ public class SecurityConfig {
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .exceptionHandling(ex -> ex.accessDeniedHandler(new JwtAccessDeniedHandler()))
-                .authorizeExchange(ex -> ex
-                        // CORS preflight must always be allowed through
-                        .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        // ── Auth ──────────────────────────────────────────────
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
-                        .pathMatchers("/api/v1/auth/me", "/api/v1/auth/profile").authenticated()
-                        .pathMatchers("/api/v1/user/**").hasRole("ADMIN")
-
-                        // ── Facility catalog: reads owner/admin (hidden from USER), writes admin ──
-                        .pathMatchers(HttpMethod.GET, "/api/v1/facility/**").hasAnyRole("HOTEL_OWNER", "ADMIN")
-                        .pathMatchers("/api/v1/facility/**").hasRole("ADMIN")
-
-                        // ── Hotel collection ───────────────────────────────────
-                        .pathMatchers(HttpMethod.GET, "/api/v1/hotel").permitAll()              // browse hotels
-                        .pathMatchers(HttpMethod.POST, "/api/v1/hotel").hasAnyRole("HOTEL_OWNER", "ADMIN")
-
-                        // ── Hotel resource (own row): read public, update/delete owner/admin ──
-                        .pathMatchers(HttpMethod.GET, "/api/v1/hotel/{hotelId}").permitAll()
-                        .pathMatchers(HttpMethod.PUT, "/api/v1/hotel/{hotelId}").access(ownership)
-                        .pathMatchers(HttpMethod.DELETE, "/api/v1/hotel/{hotelId}").access(ownership)
-
-                        // ── Booking: availability public, creating requires login ──
-                        .pathMatchers(HttpMethod.GET, "/api/v1/hotel/{hotelId}/room/{roomId}/availability").permitAll()
-                        .pathMatchers(HttpMethod.POST, "/api/v1/hotel/{hotelId}/room/{roomId}/booking").authenticated()
-                        // booking management (list/get/cancel) → owner or admin
-                        .pathMatchers("/api/v1/hotel/{hotelId}/booking/**").access(ownership)
-
-                        // ── Facilities & images under a hotel: owner/admin only (hidden from USER), all methods ──
-                        .pathMatchers("/api/v1/hotel/{hotelId}/room/{roomId}/image/**").access(ownership)
-                        .pathMatchers("/api/v1/hotel/{hotelId}/room/{roomId}/facility/**").access(ownership)
-                        .pathMatchers("/api/v1/hotel/{hotelId}/facility/**").access(ownership)
-
-                        // ── Browsing rooms / hotel detail is public; other writes are owner/admin ──
-                        .pathMatchers(HttpMethod.GET, "/api/v1/hotel/{hotelId}/**").permitAll()
-                        .pathMatchers("/api/v1/hotel/{hotelId}/**").access(ownership)
-
-                        // ── Hotel-level images (flat /image route): owner/admin only (hidden from USER) ──
-                        .pathMatchers("/api/v1/image/save/{hotelId}").access(ownership)
-                        .pathMatchers("/api/v1/image/{hotelId}/{imageId}").access(ownership)
-                        .pathMatchers("/api/v1/image/{hotelId}").access(ownership)
-
-                        // Anything else (e.g. PUT/DELETE /hotel/{hotelId} handled above) stays open
-                        .anyExchange().permitAll())
+                // Authorization is delegated entirely to RbacFilter (data-driven, per-endpoint).
+                // This chain only authenticates the JWT and populates the SecurityContext; it
+                // permits everything so RbacFilter, running just after, can make the decision.
+                .authorizeExchange(ex -> ex.anyExchange().permitAll())
                 .addFilterAt(jwtFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }

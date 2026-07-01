@@ -8,22 +8,28 @@ info:
     Routes are nested under an `Accept: application/json` predicate, so every request must
     send the `Accept: application/json` header.
 
-    ## Authorization (RBAC + ownership)
-    Send the JWT from `POST /auth/login` as `Authorization: Bearer <token>`. Access rules:
+    ## Authorization (data-driven RBAC)
+    Send the JWT from `POST /auth/login` as `Authorization: Bearer <token>`. Every endpoint is
+    authorized by role against the `permission` / `role_permission` / `role` tables (the
+    `RbacFilter`); Spring Security only authenticates the token. Authorization is **purely
+    role-based — there is no resource ownership check**, so a HOTEL_OWNER may manage *any*
+    hotel, not only ones they created. Access rules:
     - **Public (no token):** register, login, `GET /hotel`, `GET /hotel/{hotelId}`, its rooms
       (`GET .../room`, `GET .../room/{roomId}`), and `GET .../availability`. A USER can browse
       hotels/rooms and **book** a room, but cannot create/update/delete hotels.
-    - **Any authenticated user:** `POST .../booking` (booking requires login), `GET /auth/me`, `GET /auth/profile`.
-    - **HOTEL_OWNER (their own hotel) or ADMIN:** create/update/delete hotels, rooms, and **all
-      image and facility-assignment endpoints — reads included** — under `/hotel/{hotelId}/**`
-      and `/image/...`; booking management (list/get/cancel) for that hotel. **Image and
-      facility endpoints are hidden from USER.** The facility **catalog** (`GET /facility`,
-      `/facility/{id}`) is visible to any HOTEL_OWNER or ADMIN.
+    - **USER (any authenticated user):** `POST .../booking` (booking requires login),
+      `GET /auth/me`, `GET /auth/profile`.
+    - **HOTEL_OWNER or ADMIN:** create/update/delete hotels and rooms; all image and
+      facility-assignment endpoints (reads included) under `/hotel/{hotelId}/**` and `/image/...`;
+      booking management (list/get/cancel). **Image and facility endpoints are hidden from USER.**
+      The facility **catalog** reads (`GET /facility`, `/facility/{id}`) are visible to any
+      HOTEL_OWNER or ADMIN.
     - **ADMIN only:** facility catalog writes (`POST/PUT/DELETE /facility`), user management
       (`/user/**`, promote).
 
-    Creating a hotel records the creator as its owner. Endpoints below marked with the lock
-    (`security: bearerAuth`) require a token; owner/admin rules are enforced server-side.
+    Creating a hotel still records the creator in `khotel_hotel_owner` (for future ownership
+    enforcement), but that table is not consulted today. Endpoints below marked with the lock
+    (`security: bearerAuth`) require a token; the role rules above are enforced server-side.
   version: 1.0.0
 servers:
   - url: http://localhost:9090/api/v1
@@ -48,7 +54,7 @@ paths:
       tags:
         - Hotel
       summary: Create a hotel
-      description: Creates a new hotel; the authenticated user becomes its owner. Requires HOTEL_OWNER or ADMIN.
+      description: Creates a new hotel; the creator is recorded in khotel_hotel_owner (not enforced today). Requires HOTEL_OWNER or ADMIN.
       operationId: createHotel
       security:
         - bearerAuth: []
@@ -118,7 +124,7 @@ paths:
       tags:
         - Hotel
       summary: Update a hotel (full replace)
-      description: Replaces the hotel's fields. Omitted fields are set to null. `name` is required. Owner of this hotel or ADMIN.
+      description: Replaces the hotel's fields. Omitted fields are set to null. `name` is required. Requires HOTEL_OWNER or ADMIN.
       operationId: updateHotel
       security:
         - bearerAuth: []
@@ -147,7 +153,7 @@ paths:
       tags:
         - Hotel
       summary: Delete a hotel
-      description: Deletes the hotel, its rooms, and all their images (storage objects + DB rows are removed; images cleaned before the cascade). Owner of this hotel or ADMIN.
+      description: Deletes the hotel, its rooms, and all their images (storage objects + DB rows are removed; images cleaned before the cascade). Requires HOTEL_OWNER or ADMIN.
       operationId: deleteHotel
       security:
         - bearerAuth: []
@@ -166,6 +172,8 @@ paths:
       tags:
         - Room
       summary: Create a room under a hotel
+      security:
+        - bearerAuth: []
       description: Creates a room for the given hotel. `roomName` is required; the hotel must exist (404 otherwise).
       operationId: createRoom
       parameters:
@@ -242,6 +250,8 @@ paths:
       tags:
         - Room
       summary: Update a room (full replace)
+      security:
+        - bearerAuth: []
       description: Replaces the room's fields. Omitted fields fall back to defaults. `roomName` is required.
       operationId: updateRoom
       parameters:
@@ -270,6 +280,8 @@ paths:
       tags:
         - Room
       summary: Delete a room
+      security:
+        - bearerAuth: []
       description: Deletes the room and all its images (storage objects + image rows are removed first, then the room).
       operationId: deleteRoom
       parameters:
@@ -288,6 +300,8 @@ paths:
       tags:
         - Image
       summary: Upload one or more images for a room
+      security:
+        - bearerAuth: []
       description: |
         Uploads image files for the given room (sets both hotelId and roomId).
         Files must be sent under the `files` multipart key.
@@ -354,6 +368,8 @@ paths:
       tags:
         - Image
       summary: Delete all images for a room
+      security:
+        - bearerAuth: []
       description: Deletes every image of the room (DB rows + best-effort storage objects).
       operationId: deleteAllRoomImages
       parameters:
@@ -370,6 +386,8 @@ paths:
       tags:
         - Image
       summary: Delete a single room image
+      security:
+        - bearerAuth: []
       description: Deletes one image of the room (DB row + best-effort storage objects).
       operationId: deleteRoomImage
       parameters:
@@ -519,7 +537,7 @@ paths:
       tags:
         - Auth
       summary: Promote a user to HOTEL_OWNER (admin only)
-      description: Grants the HOTEL_OWNER role so the user can create and manage their own hotel.
+      description: Grants the HOTEL_OWNER role so the user can create and manage hotels and their inventory.
       operationId: promoteToHotelOwner
       security:
         - bearerAuth: []
@@ -546,6 +564,8 @@ paths:
       tags:
         - Facility
       summary: Create a facility (catalog)
+      security:
+        - bearerAuth: []
       description: Adds a facility to the global catalog. `name` is required and unique.
       operationId: createFacility
       requestBody:
@@ -615,6 +635,8 @@ paths:
       tags:
         - Facility
       summary: Update a facility (full replace)
+      security:
+        - bearerAuth: []
       operationId: updateFacility
       parameters:
         - $ref: '#/components/parameters/FacilityId'
@@ -641,6 +663,8 @@ paths:
       tags:
         - Facility
       summary: Delete a facility
+      security:
+        - bearerAuth: []
       description: Removes the facility from the catalog and unassigns it from all hotels/rooms (cascade).
       operationId: deleteFacility
       parameters:
@@ -658,6 +682,8 @@ paths:
       tags:
         - Facility
       summary: Assign a facility to a hotel
+      security:
+        - bearerAuth: []
       description: Assigns a catalog facility to the hotel with per-offering details. Idempotent (re-assigning updates the link). 404 if the hotel or facility is missing; 400 if the facility's appliesTo forbids HOTEL.
       operationId: assignFacilityToHotel
       parameters:
@@ -710,6 +736,8 @@ paths:
       tags:
         - Facility
       summary: Unassign a facility from a hotel
+      security:
+        - bearerAuth: []
       operationId: unassignFacilityFromHotel
       parameters:
         - $ref: '#/components/parameters/HotelId'
@@ -727,6 +755,8 @@ paths:
       tags:
         - Facility
       summary: Assign a facility to a room
+      security:
+        - bearerAuth: []
       description: Assigns a catalog facility to the room. Idempotent. 404 if the room or facility is missing; 400 if the facility's appliesTo forbids ROOM.
       operationId: assignFacilityToRoom
       parameters:
@@ -782,6 +812,8 @@ paths:
       tags:
         - Facility
       summary: Unassign a facility from a room
+      security:
+        - bearerAuth: []
       operationId: unassignFacilityFromRoom
       parameters:
         - $ref: '#/components/parameters/HotelId'
@@ -890,6 +922,8 @@ paths:
       tags:
         - Booking
       summary: List a hotel's bookings
+      security:
+        - bearerAuth: []
       operationId: getHotelBookings
       parameters:
         - $ref: '#/components/parameters/HotelId'
@@ -908,6 +942,8 @@ paths:
       tags:
         - Booking
       summary: Get a booking by id
+      security:
+        - bearerAuth: []
       operationId: getBookingById
       parameters:
         - $ref: '#/components/parameters/HotelId'
@@ -929,6 +965,8 @@ paths:
       tags:
         - Booking
       summary: Cancel a booking
+      security:
+        - bearerAuth: []
       description: Sets the booking status to CANCELLED, which frees its units for the dates. Idempotent.
       operationId: cancelBooking
       parameters:
@@ -951,6 +989,8 @@ paths:
       tags:
         - Image
       summary: Upload one or more images for a hotel
+      security:
+        - bearerAuth: []
       description: |
         Uploads one or more image files for the given hotel. Files must be sent
         under the `files` multipart key. Returns the list of persisted image
@@ -1064,6 +1104,8 @@ paths:
       tags:
         - Image
       summary: Delete all images for a hotel
+      security:
+        - bearerAuth: []
       description: Deletes every image record (and associated stored files) for the given hotel.
       operationId: deleteAllByHotelId
       parameters:
@@ -1122,6 +1164,8 @@ paths:
       tags:
         - Image
       summary: Replace an existing image
+      security:
+        - bearerAuth: []
       description: |
         Replaces the file of an existing image record. The new file must be sent
         under the `file` multipart key.
@@ -1189,6 +1233,8 @@ paths:
       tags:
         - Image
       summary: Delete a single image
+      security:
+        - bearerAuth: []
       description: Deletes a single image record (and its stored file) for the given hotel and image id.
       operationId: deleteImage
       parameters:

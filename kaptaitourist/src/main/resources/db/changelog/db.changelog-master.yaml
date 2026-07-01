@@ -56,6 +56,13 @@ databaseChangeLog:
             path: db/changelog/create-hotel-owner-table.sql
             relativeToChangelogFile: false
   - changeSet:
+      id: create-rbac-tables
+      author: rafiyad
+      changes:
+        - sqlFile:
+            path: db/changelog/create-rbac-tables.sql
+            relativeToChangelogFile: false
+  - changeSet:
       id: sample-khotel_hotel-data
       author: rafiyad
       changes:

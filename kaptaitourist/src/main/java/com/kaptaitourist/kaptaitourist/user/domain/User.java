@@ -19,6 +19,7 @@ public class User {
     private String email;
     private String mobile;
     private String gender;
+    private String role;
 
     /** Never serialized to clients. */
     @JsonIgnore

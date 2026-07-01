@@ -1,0 +1,14 @@
+### Kaptai Tourist API — request collection
+# IntelliJ / VS Code "REST Client" format. Every route is nested under an
+# `Accept: application/json` predicate, so that header is always required.
+
+@baseUrl = http://localhost:9090/api/v1
+@hotelId = 1111
+
+### Public — browse all hotels (no token)
+GET {{baseUrl}}/hotel
+Accept: application/json
+
+### Public — get one hotel by id (no token)
+GET {{baseUrl}}/hotel/{{hotelId}}
+Accept: application/json
