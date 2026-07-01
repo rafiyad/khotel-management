@@ -1,12 +1,15 @@
 package com.kaptaitourist.kaptaitourist.core.filter;
 
 import com.kaptaitourist.kaptaitourist.core.rolepermission.application.port.in.PermissionUseCase;
+import com.kaptaitourist.kaptaitourist.core.security.SecurityErrorWriter;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
@@ -42,21 +45,35 @@ public class RbacFilter implements WebFilter {
 
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
+                .filter(authentication -> authentication != null && authentication.isAuthenticated())
                 .doOnNext(authentication -> log.info("RBAC filter authentication: {}", authentication))
-                .map(auth -> auth.getAuthorities().stream()
+                // Authenticated caller: decide 200 vs 403 (Forbidden — logged in, but lacks permission).
+                .flatMap(authentication -> authorize(exchange, chain, authentication, path, method, false))
+                // No authentication in the context: decide 200 (public endpoint) vs 401 (Unauthorized).
+                .switchIfEmpty(Mono.defer(() -> authorize(exchange, chain, null, path, method, true)));
+    }
+
+    private Mono<Void> authorize(ServerWebExchange exchange, WebFilterChain chain, Authentication authentication,
+                                 String path, String method, boolean unauthenticated) {
+        List<String> roles = authentication == null ? List.of()
+                : authentication.getAuthorities().stream()
                         .map(GrantedAuthority::getAuthority)   // plain role names, e.g. "ADMIN"
-                        .toList())
-                .doOnNext(authorities -> log.info("RBAC filter authorities: {}", authorities))
-                .defaultIfEmpty(List.of())
-                .flatMap(roles -> permissionUseCase.hasPermission(roles, path, method))
+                        .toList();
+        log.info("RBAC filter authorities: {}", roles);
+
+        return permissionUseCase.hasPermission(roles, path, method)
                 .flatMap(hasPermission -> {
-                    if(hasPermission){
+                    if (hasPermission) {
                         return chain.filter(exchange);
-                    } else {
-                        log.info("RBAC filter access denied for path: {} and method: {}", path, method);
-                        exchange.getResponse().setStatusCode(org.springframework.http.HttpStatus.FORBIDDEN);
-                        return exchange.getResponse().setComplete();
                     }
+                    if (unauthenticated) {
+                        log.info("RBAC filter authentication required for path: {} and method: {}", path, method);
+                        return SecurityErrorWriter.write(exchange, HttpStatus.UNAUTHORIZED,
+                                "Authentication required. Please provide a valid token to access this resource.");
+                    }
+                    log.info("RBAC filter access denied for path: {} and method: {}", path, method);
+                    return SecurityErrorWriter.write(exchange, HttpStatus.FORBIDDEN,
+                            "Access Denied. Restricted. You are not allowed to access this resource.");
                 });
     }
 }

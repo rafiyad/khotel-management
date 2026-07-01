@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -55,13 +56,17 @@ public class SecurityConfig {
         AuthenticationWebFilter jwtFilter =
                 new AuthenticationWebFilter(new JwtReactiveAuthenticationManager(jwtService));
         jwtFilter.setServerAuthenticationConverter(new JwtServerAuthenticationConverter());
+        // A malformed / expired token fails here (before RbacFilter runs), so emit the 401 JSON
+        // body directly instead of letting the default entry point return an empty response.
+        jwtFilter.setAuthenticationFailureHandler((webFilterExchange, exception) ->
+                SecurityErrorWriter.write(webFilterExchange.getExchange(), HttpStatus.UNAUTHORIZED,
+                        "Invalid or expired token. Please provide a valid token to access this resource."));
 
         return http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
-                .exceptionHandling(ex -> ex.accessDeniedHandler(new JwtAccessDeniedHandler()))
                 // Authorization is delegated entirely to RbacFilter (data-driven, per-endpoint).
                 // This chain only authenticates the JWT and populates the SecurityContext; it
                 // permits everything so RbacFilter, running just after, can make the decision.
