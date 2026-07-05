@@ -52,6 +52,13 @@ public class UserAdapter implements UserPort {
     }
 
     @Override
+    public Mono<User> findByMobile(String mobile) {
+        return userRepository.findByMobile(mobile)
+                .map(entity -> modelMapper.map(entity, User.class))
+                .flatMap(this::withRoles);
+    }
+
+    @Override
     public Mono<User> findById(String id) {
         return userRepository.findById(id)
                 .map(entity -> modelMapper.map(entity, User.class))

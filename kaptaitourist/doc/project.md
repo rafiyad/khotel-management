@@ -64,10 +64,14 @@ See `doc/openapi.yaml` for the image module spec (hotel endpoints not yet in the
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/hotel` | Create a hotel (201) |
-| GET | `/hotel` | List all hotels |
+| GET | `/hotel` | List hotels (paginated; default `page=0`, `size=10`, max `size=100`). Filters (AND): `?search=` name, `?facility=` (repeatable, ALL-match, hotel-level), `?checkIn&checkOut&guests` (hotels with a room free for the dates) |
 | GET | `/hotel/{hotelId}` | Get one hotel (404 if missing) |
 | PUT | `/hotel/{hotelId}` | Full update (404 if missing) |
 | DELETE | `/hotel/{hotelId}` | Delete (204; removes rooms + all images incl. storage) |
+
+Hotel responses (list + detail) include a derived **`coverImageUrl`** for grid views: the first
+primary hotel-level image, else the first by display order; prefers the thumbnail, falls back to
+the full image, `null` if the hotel has no images. Computed in `HotelService.enrich`, not stored.
 
 **Room** (nested under hotel; responses embed `images`):
 
@@ -83,35 +87,47 @@ See `doc/openapi.yaml` for the image module spec (hotel endpoints not yet in the
 
 | Method | Path | Access |
 |---|---|---|
+| GET | `/welcome` | Public — smoke test, no auth/DB → `{message, status}` |
 | POST | `/auth/register` | Public — creates a USER |
-| POST | `/auth/login` | Public — returns JWT |
+| POST | `/auth/register-owner` | Public — creates a USER + files a PENDING owner-enlistment request (HOTEL_OWNER not granted yet) |
+| POST | `/auth/login` | Public — returns JWT. Body: `{email}` **or** `{mobile}` + `password` |
 | GET | `/auth/me` | Authenticated — full own record |
 | GET | `/auth/profile` | Authenticated — own profile with **masked** email/mobile |
+| POST | `/auth/change-password` | Authenticated (any role) — verify current, set new (≥6, must differ) |
+| GET | `/owner-request?status=` | ADMIN — list owner-enlistment requests (+ requester name/email) |
+| POST | `/owner-request/{requestId}/approve` | ADMIN — grants HOTEL_OWNER, marks APPROVED (409 if already decided; requester re-logins) |
+| POST | `/owner-request/{requestId}/reject` | ADMIN — marks REJECTED (409 if already decided) |
+| GET | `/owner/hotel` | HOTEL_OWNER/ADMIN — the caller's own hotels, enriched |
+| GET | `/admin/hotel` | ADMIN — all hotels + owners + room-type/booking counts (no image enrichment) |
 | GET | `/user` | ADMIN only |
 | POST | `/user/{userId}/promote` | ADMIN only — grants HOTEL_OWNER |
 
 Auth = `Authorization: Bearer <jwt>`. Roles seeded: USER / HOTEL_OWNER / ADMIN. A bootstrap
 ADMIN is created on startup from `app.admin.*` (default `admin@kaptai.local` / `Admin@12345`).
 
-**Authorization model — data-driven RBAC.** `SecurityConfig` no longer carries any
-method/role rules: its `authorizeExchange` is `permitAll`, and its only job is to
-authenticate the JWT and populate the `SecurityContext`. Every endpoint is then authorized
-by **`core/filter/RbacFilter`** (a `WebFilter` ordered after the security chain), which calls
-`PermissionService.hasPermission(roles, url, method)`. That checks the request's method + URL
-template against the `permission` table (joined through `role_permission` to `role`); a
-`permission_name = 'ALL'` row means public. Roles come from the JWT as plain names (no
-`ROLE_` prefix — authorities are built as bare `ADMIN`/`USER`/`HOTEL_OWNER` to match
-`role.name`). Seeded matrix:
-- **Public (`ALL`):** register, login, `GET /hotel`, `/hotel/{id}`, rooms (list + detail), availability.
-- **USER:** `/auth/me`, `/auth/profile`, `POST .../booking`. (Browses via the public rows.)
-- **HOTEL_OWNER:** everything except user admin and facility-catalog writes — hotel/room/image/facility management, booking list/get/cancel, facility-catalog reads.
-- **ADMIN:** every protected endpoint, including `/user/**` and facility-catalog writes.
+**Authorization model — data-driven RBAC + ownership.** `SecurityConfig` carries no method/role
+rules: its `authorizeExchange` is `permitAll`, and its only job is to authenticate the JWT and
+populate the `SecurityContext`. Every endpoint is then authorized by **`core/filter/RbacFilter`**
+(a `WebFilter` ordered after the security chain), which calls `PermissionService.authorize(roles,
+url, method)`. That checks the request's method + URL template against the `permission` table
+(joined through `role_permission` to `role`); a `permission_name = 'ALL'` row means public. Roles
+come from the JWT as plain names (bare `ADMIN`/`USER`/`HOTEL_OWNER` to match `role.name`).
 
-> **Ownership dropped (regression vs. earlier).** Pure RBAC checks the *role*, not the
-> *resource* — so any HOTEL_OWNER can currently manage **any** hotel, not just their own.
-> The `HotelOwnershipAuthorizationManager` / `OwnershipChecker` were removed. `khotel_hotel_owner`
-> still records ownership (creator = owner on hotel create) for when ownership enforcement
-> is reintroduced. `createdBy` on hotel/booking comes from the token.
+**Ownership layer.** A permission row can set `requires_ownership = TRUE`. For those endpoints the
+filter additionally requires a **HOTEL_OWNER to own the `{hotelId}`** in the path (extracted from
+the matched permission's URL template, checked against `khotel_hotel_owner` via `OwnershipChecker`).
+**ADMIN bypasses** the ownership check. Seeded matrix:
+- **Public (`ALL`):** register, login, `GET /hotel`, `/hotel/{id}`, rooms (list + detail), availability,
+  and **all facility reads** — catalog (`GET /facility`, `/facility/{id}`) + hotel/room facility lists —
+  so visitors can see amenities. Facilities are also **embedded** in hotel and room responses.
+- **USER:** `/auth/me`, `/auth/profile`, `POST .../booking` (guests book any hotel — no ownership).
+- **HOTEL_OWNER (own hotels only):** create hotels; update/delete their hotels & rooms; image
+  endpoints; facility assignment writes; booking list/get/cancel; the hotel **dashboard**.
+- **ADMIN (any hotel):** all of the above without the ownership restriction, plus `/user/**` and
+  facility-catalog writes.
+
+`createdBy` on hotel/booking comes from the token; creating a hotel records the creator in
+`khotel_hotel_owner` (which the ownership check consults).
 
 **Booking** (date-aware; availability computed):
 
@@ -123,12 +139,19 @@ template against the `permission` table (joined through `role_permission` to `ro
 | GET | `/hotel/{hotelId}/booking/{bookingId}` | Get one booking |
 | POST | `/hotel/{hotelId}/booking/{bookingId}/cancel` | Cancel (frees units) |
 
+**Dashboard** (owner of the hotel, or admin):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/hotel/{hotelId}/dashboard` | Live rollup: rooms available/booked tonight + occupancy, upcoming bookings + today's arrivals/departures + cancellations, upcoming revenue, facilities assigned/unavailable, hotel image count (404 if hotel missing) |
+| GET | `/admin/dashboard` | **Admin only** — platform-wide totals across all hotels: hotels/owners/users/facilities, rooms booked/available tonight + occupancy, upcoming bookings + arrivals/departures + cancellations, upcoming revenue |
+
 **Facility** (catalog + assignment):
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST / GET | `/facility` | Create / list catalog facilities |
-| GET / PUT / DELETE | `/facility/{facilityId}` | Get / update / delete a facility |
+| POST / GET | `/facility` | Create (HOTEL_OWNER/ADMIN; `created_by_id` from token) / list catalog facilities |
+| GET / PUT / DELETE | `/facility/{facilityId}` | Get / update / delete — ADMIN any; HOTEL_OWNER only facilities they created (else 403) |
 | POST / GET | `/hotel/{hotelId}/facility` | Assign / list a hotel's facilities |
 | DELETE | `/hotel/{hotelId}/facility/{facilityId}` | Unassign from hotel |
 | POST / GET | `/hotel/{hotelId}/room/{roomId}/facility` | Assign / list a room's facilities |
@@ -142,6 +165,7 @@ template against the `permission` table (joined through `role_permission` to `ro
 | GET | `/hotel/{hotelId}/room/{roomId}/image` | List a room's images |
 | DELETE | `/hotel/{hotelId}/room/{roomId}/image/{imageId}` | Delete one room image (row + storage) |
 | DELETE | `/hotel/{hotelId}/room/{roomId}/image` | Delete all of a room's images (rows + storage) |
+| POST | `/hotel/{hotelId}/room/{roomId}/image/{imageId}/primary` | Set the room's cover (unsets prior primary, transactional) |
 
 **Image** (hotel-scoped):
 
@@ -153,6 +177,7 @@ template against the `permission` table (joined through `role_permission` to `ro
 | PUT | `/image/{hotelId}/{imageId}` | Replace an image (multipart key `file`) |
 | DELETE | `/image/{hotelId}/{imageId}` | Delete one image |
 | DELETE | `/image/{hotelId}` | Delete all images for a hotel |
+| POST | `/image/{hotelId}/{imageId}/primary` | Set the hotel's cover image (unsets prior primary, transactional) — makes `coverImageUrl` meaningful |
 
 Errors are returned as `{status, error, message, timestamp}` via `GlobalExceptionHandler`
 (`ValidationException` → 400, `ImageNotFoundException` → 404, else 500).
@@ -217,15 +242,18 @@ HOTEL/ROOM/BOTH, `is_active`, version, audit). Shared across all tenants.
 **`khotel_hotel_facility` / `khotel_room_facility`** — many-to-many junctions linking the
 catalog to hotels/rooms. Surrogate `id` PK (R2DBC needs a single-column id) + UNIQUE
 (owner_id, facility_id). Per-offering qualifiers on the link: `is_complimentary`,
-`additional_charge`, `notes`. FKs to owner + facility, both `ON DELETE CASCADE` (deleting
-a hotel/room/facility removes its links — junctions are DB-only, no storage to clean).
+**`is_available`** (owner can mark a facility temporarily unavailable at this hotel/room; drives
+the dashboard's "unavailable" count together with the catalog's `is_active`), `additional_charge`,
+`notes`. FKs to owner + facility, both `ON DELETE CASCADE` (deleting a hotel/room/facility removes
+its links — junctions are DB-only, no storage to clean).
 
 **`role` / `permission` / `role_permission`** — the data-driven RBAC engine (un-prefixed
 by design, matching the `core/rolepermission` code). `permission` = one row per endpoint:
 `permission_name` (`HOTEL.UPDATE`, or `ALL` for public), `url` (path template), `method`,
-`service_name`, optional `top_menu_id`/`left_menu_id`, `is_deleted`; partial-unique on
+`service_name`, **`requires_ownership`** (owner must own the path's `{hotelId}`; ADMIN bypasses),
+optional `top_menu_id`/`left_menu_id`, `is_deleted`; partial-unique on
 `(url, method) WHERE is_deleted = false`. `role` mirrors the role names (USER/HOTEL_OWNER/
-ADMIN); `role_permission` links them. Seeded with all 42 endpoints + the role matrix.
+ADMIN); `role_permission` links them. Seeded with all 43 endpoints + the role matrix.
 `RbacFilter` reads these on every request (raw-SQL joins in `PermissionRepository`; no
 entities for `role`/`role_permission`). **Note:** role *names* are duplicated here vs.
 `khotel_role` (which still drives user↔role membership + the JWT) — they must stay in sync.

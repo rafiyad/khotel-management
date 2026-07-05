@@ -24,6 +24,7 @@ public class ImageRouterConfig {
                         .PUT(RouteNames.BASE_URL.concat(RouteNames.IMAGE).concat(RouteNames.HOTEL_ID).concat(RouteNames.FIND_BY_IMAGE_ID), imageHandler::updateImage)
                         .DELETE(RouteNames.BASE_URL.concat(RouteNames.IMAGE).concat(RouteNames.HOTEL_ID).concat(RouteNames.FIND_BY_IMAGE_ID), imageHandler::deleteImage)
                         .DELETE(RouteNames.BASE_URL.concat(RouteNames.IMAGE).concat(RouteNames.HOTEL_ID), imageHandler::deleteAllByHotelId)
+                        .POST(RouteNames.BASE_URL.concat(RouteNames.IMAGE).concat(RouteNames.HOTEL_ID).concat(RouteNames.FIND_BY_IMAGE_ID).concat(RouteNames.PRIMARY), imageHandler::setHotelImagePrimary)
                 )
                 .build();
     }

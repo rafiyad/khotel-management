@@ -39,11 +39,17 @@ public class GlobalExceptionHandler {
         if (ex instanceof UserNotFoundException) {
             return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
         }
+        if (ex instanceof OwnerRequestNotFoundException) {
+            return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+        }
         if (ex instanceof InvalidCredentialsException) {
             return buildResponse(HttpStatus.UNAUTHORIZED, "Unauthorized", ex.getMessage());
         }
         if (ex instanceof ConflictException) {
             return buildResponse(HttpStatus.CONFLICT, "Conflict", ex.getMessage());
+        }
+        if (ex instanceof ForbiddenException) {
+            return buildResponse(HttpStatus.FORBIDDEN, "Forbidden", ex.getMessage());
         }
         if (ex instanceof DataIntegrityViolationException) {
             // e.g. a concurrent duplicate that slipped past the app-level check and hit a UNIQUE constraint.

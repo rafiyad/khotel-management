@@ -18,6 +18,9 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Component
 @Slf4j
@@ -64,10 +67,11 @@ public class FacilityAdapter implements FacilityPort {
 
     @Override
     public Mono<AssignedFacility> assignToHotel(String hotelId, String facilityId, Boolean isComplimentary,
-                                                BigDecimal additionalCharge, String notes, String createdBy) {
+                                                Boolean isAvailable, BigDecimal additionalCharge, String notes, String createdBy) {
         return hotelFacilityRepository.findByHotelIdAndFacilityId(hotelId, facilityId)
                 .flatMap(existing -> {
                     existing.setIsComplimentary(isComplimentary == null || isComplimentary);
+                    existing.setIsAvailable(isAvailable == null || isAvailable);
                     existing.setAdditionalCharge(additionalCharge);
                     existing.setNotes(notes);
                     return hotelFacilityRepository.save(existing);
@@ -76,20 +80,21 @@ public class FacilityAdapter implements FacilityPort {
                         .hotelId(hotelId)
                         .facilityId(facilityId)
                         .isComplimentary(isComplimentary == null || isComplimentary)
+                        .isAvailable(isAvailable == null || isAvailable)
                         .additionalCharge(additionalCharge)
                         .notes(notes)
                         .createdBy(createdBy)
                         .createdAt(LocalDateTime.now())
                         .build())))
                 .flatMap(link -> facilityRepository.findById(facilityId)
-                        .map(fac -> toAssigned(fac, link.getIsComplimentary(), link.getAdditionalCharge(), link.getNotes())));
+                        .map(fac -> toAssigned(fac, link.getIsComplimentary(), link.getIsAvailable(), link.getAdditionalCharge(), link.getNotes())));
     }
 
     @Override
     public Flux<AssignedFacility> findHotelFacilities(String hotelId) {
         return hotelFacilityRepository.findAllByHotelId(hotelId)
                 .flatMap(link -> facilityRepository.findById(link.getFacilityId())
-                        .map(fac -> toAssigned(fac, link.getIsComplimentary(), link.getAdditionalCharge(), link.getNotes())));
+                        .map(fac -> toAssigned(fac, link.getIsComplimentary(), link.getIsAvailable(), link.getAdditionalCharge(), link.getNotes())));
     }
 
     @Override
@@ -102,10 +107,11 @@ public class FacilityAdapter implements FacilityPort {
 
     @Override
     public Mono<AssignedFacility> assignToRoom(String roomId, String facilityId, Boolean isComplimentary,
-                                               BigDecimal additionalCharge, String notes, String createdBy) {
+                                               Boolean isAvailable, BigDecimal additionalCharge, String notes, String createdBy) {
         return roomFacilityRepository.findByRoomIdAndFacilityId(roomId, facilityId)
                 .flatMap(existing -> {
                     existing.setIsComplimentary(isComplimentary == null || isComplimentary);
+                    existing.setIsAvailable(isAvailable == null || isAvailable);
                     existing.setAdditionalCharge(additionalCharge);
                     existing.setNotes(notes);
                     return roomFacilityRepository.save(existing);
@@ -114,20 +120,54 @@ public class FacilityAdapter implements FacilityPort {
                         .roomId(roomId)
                         .facilityId(facilityId)
                         .isComplimentary(isComplimentary == null || isComplimentary)
+                        .isAvailable(isAvailable == null || isAvailable)
                         .additionalCharge(additionalCharge)
                         .notes(notes)
                         .createdBy(createdBy)
                         .createdAt(LocalDateTime.now())
                         .build())))
                 .flatMap(link -> facilityRepository.findById(facilityId)
-                        .map(fac -> toAssigned(fac, link.getIsComplimentary(), link.getAdditionalCharge(), link.getNotes())));
+                        .map(fac -> toAssigned(fac, link.getIsComplimentary(), link.getIsAvailable(), link.getAdditionalCharge(), link.getNotes())));
     }
 
     @Override
     public Flux<AssignedFacility> findRoomFacilities(String roomId) {
         return roomFacilityRepository.findAllByRoomId(roomId)
                 .flatMap(link -> facilityRepository.findById(link.getFacilityId())
-                        .map(fac -> toAssigned(fac, link.getIsComplimentary(), link.getAdditionalCharge(), link.getNotes())));
+                        .map(fac -> toAssigned(fac, link.getIsComplimentary(), link.getIsAvailable(), link.getAdditionalCharge(), link.getNotes())));
+    }
+
+    @Override
+    public Mono<Map<String, List<AssignedFacility>>> findRoomFacilitiesByRoomIds(List<String> roomIds) {
+        if (roomIds == null || roomIds.isEmpty()) {
+            return Mono.just(Map.of());
+        }
+        // Two queries total (links IN roomIds, then facilities IN facilityIds), instead of the
+        // per-room / per-link N+1 of findRoomFacilities. Grouped back to roomId in memory.
+        return roomFacilityRepository.findAllByRoomIdIn(roomIds)
+                .collectList()
+                .flatMap(links -> {
+                    if (links.isEmpty()) {
+                        return Mono.just(Map.of());
+                    }
+                    List<String> facilityIds = links.stream()
+                            .map(RoomFacilityEntity::getFacilityId)
+                            .distinct()
+                            .toList();
+                    return facilityRepository.findAllById(facilityIds)
+                            .collectMap(FacilityEntity::getId)
+                            .map(facById -> links.stream()
+                                    .filter(link -> facById.containsKey(link.getFacilityId()))
+                                    .collect(Collectors.groupingBy(
+                                            RoomFacilityEntity::getRoomId,
+                                            Collectors.mapping(link -> toAssigned(
+                                                            facById.get(link.getFacilityId()),
+                                                            link.getIsComplimentary(),
+                                                            link.getIsAvailable(),
+                                                            link.getAdditionalCharge(),
+                                                            link.getNotes()),
+                                                    Collectors.toList()))));
+                });
     }
 
     @Override
@@ -138,11 +178,12 @@ public class FacilityAdapter implements FacilityPort {
 
     // ---- Helper ----
 
-    private AssignedFacility toAssigned(FacilityEntity fac, Boolean isComplimentary,
+    private AssignedFacility toAssigned(FacilityEntity fac, Boolean isComplimentary, Boolean isAvailable,
                                         BigDecimal additionalCharge, String notes) {
         return AssignedFacility.builder()
                 .facility(modelMapper.map(fac, Facility.class))
                 .isComplimentary(isComplimentary)
+                .isAvailable(isAvailable)
                 .additionalCharge(additionalCharge)
                 .notes(notes)
                 .build();

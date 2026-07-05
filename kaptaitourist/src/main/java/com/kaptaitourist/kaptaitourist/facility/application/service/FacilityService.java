@@ -2,6 +2,7 @@ package com.kaptaitourist.kaptaitourist.facility.application.service;
 
 import com.kaptaitourist.kaptaitourist.Room.application.port.out.RoomPort;
 import com.kaptaitourist.kaptaitourist.core.exception.FacilityNotFoundException;
+import com.kaptaitourist.kaptaitourist.core.exception.ForbiddenException;
 import com.kaptaitourist.kaptaitourist.core.exception.HotelNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.RoomNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
@@ -34,7 +35,7 @@ public class FacilityService implements FacilityUseCase {
     // ===================================== Catalog ========================================
 
     @Override
-    public Mono<FacilityResponseDto> createFacility(FacilityRequestDto dto) {
+    public Mono<FacilityResponseDto> createFacility(FacilityRequestDto dto, String creatorUserId) {
         if (dto.getName() == null || dto.getName().isBlank())
             return Mono.error(new ValidationException("Facility name is required"));
 
@@ -45,6 +46,7 @@ public class FacilityService implements FacilityUseCase {
                 .description(dto.getDescription())
                 .appliesTo(normalizeAppliesTo(dto.getAppliesTo()))
                 .isActive(dto.getIsActive() == null || dto.getIsActive())
+                .createdById(creatorUserId)   // ownership: recorded from the token, not the body
                 .createdBy(dto.getCreatedBy())
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -79,29 +81,31 @@ public class FacilityService implements FacilityUseCase {
     }
 
     @Override
-    public Mono<FacilityResponseDto> updateFacility(String id, FacilityRequestDto dto) {
+    public Mono<FacilityResponseDto> updateFacility(String id, FacilityRequestDto dto, String userId, boolean isAdmin) {
         if (dto.getName() == null || dto.getName().isBlank())
             return Mono.error(new ValidationException("Facility name is required"));
 
         return facilityPort.findById(id)
                 .switchIfEmpty(Mono.error(new FacilityNotFoundException("Facility not found with id: " + id)))
-                .flatMap(existing -> {
-                    Facility updated = Facility.builder()
-                            .id(existing.getId())
-                            .name(dto.getName())
-                            .category(dto.getCategory())
-                            .icon(dto.getIcon())
-                            .description(dto.getDescription())
-                            .appliesTo(normalizeAppliesTo(dto.getAppliesTo()))
-                            .isActive(dto.getIsActive() == null || dto.getIsActive())
-                            .version(existing.getVersion())
-                            .createdBy(existing.getCreatedBy())
-                            .createdAt(existing.getCreatedAt())
-                            .updatedBy(dto.getUpdatedBy())
-                            .updatedAt(LocalDateTime.now())
-                            .build();
-                    return facilityPort.save(updated);
-                })
+                .flatMap(existing -> assertCanManage(existing, userId, isAdmin)
+                        .then(Mono.defer(() -> {
+                            Facility updated = Facility.builder()
+                                    .id(existing.getId())
+                                    .name(dto.getName())
+                                    .category(dto.getCategory())
+                                    .icon(dto.getIcon())
+                                    .description(dto.getDescription())
+                                    .appliesTo(normalizeAppliesTo(dto.getAppliesTo()))
+                                    .isActive(dto.getIsActive() == null || dto.getIsActive())
+                                    .createdById(existing.getCreatedById())   // preserve owner
+                                    .version(existing.getVersion())
+                                    .createdBy(existing.getCreatedBy())
+                                    .createdAt(existing.getCreatedAt())
+                                    .updatedBy(dto.getUpdatedBy())
+                                    .updatedAt(LocalDateTime.now())
+                                    .build();
+                            return facilityPort.save(updated);
+                        })))
                 .map(saved -> FacilityResponseDto.builder()
                         .message("Facility updated successfully")
                         .facilityData(saved)
@@ -109,12 +113,21 @@ public class FacilityService implements FacilityUseCase {
     }
 
     @Override
-    public Mono<Void> deleteFacility(String id) {
-        return facilityPort.existsById(id)
-                .flatMap(exists -> exists
-                        ? facilityPort.deleteById(id)
-                        : Mono.error(new FacilityNotFoundException("Facility not found with id: " + id)))
+    public Mono<Void> deleteFacility(String id, String userId, boolean isAdmin) {
+        return facilityPort.findById(id)
+                .switchIfEmpty(Mono.error(new FacilityNotFoundException("Facility not found with id: " + id)))
+                .flatMap(existing -> assertCanManage(existing, userId, isAdmin)
+                        .then(facilityPort.deleteById(id)))
                 .doOnSuccess(v -> log.info("Deleted facility id: {}", id));
+    }
+
+    /** ADMIN may manage any facility; a HOTEL_OWNER only facilities they created (created_by_id). */
+    private Mono<Void> assertCanManage(Facility facility, String userId, boolean isAdmin) {
+        if (isAdmin) return Mono.empty();
+        if (facility.getCreatedById() != null && facility.getCreatedById().equals(userId))
+            return Mono.empty();
+        return Mono.error(new ForbiddenException(
+                "You may only modify facilities you created"));
     }
 
     // ===================================== Hotel assignment ===============================
@@ -131,7 +144,7 @@ public class FacilityService implements FacilityUseCase {
                                         "Facility not found with id: " + dto.getFacilityId())))
                                 .flatMap(facility -> validateScope(facility, "HOTEL")
                                         .then(facilityPort.assignToHotel(hotelId, dto.getFacilityId(),
-                                                dto.getIsComplimentary(), dto.getAdditionalCharge(),
+                                                dto.getIsComplimentary(), dto.getIsAvailable(), dto.getAdditionalCharge(),
                                                 dto.getNotes(), dto.getCreatedBy())))
                         : Mono.error(new HotelNotFoundException("Hotel not found with id: " + hotelId)))
                 .map(assigned -> AssignedFacilityResponseDto.builder()
@@ -177,7 +190,7 @@ public class FacilityService implements FacilityUseCase {
                                 "Facility not found with id: " + dto.getFacilityId())))
                         .flatMap(facility -> validateScope(facility, "ROOM")
                                 .then(facilityPort.assignToRoom(roomId, dto.getFacilityId(),
-                                        dto.getIsComplimentary(), dto.getAdditionalCharge(),
+                                        dto.getIsComplimentary(), dto.getIsAvailable(), dto.getAdditionalCharge(),
                                         dto.getNotes(), dto.getCreatedBy()))))
                 .map(assigned -> AssignedFacilityResponseDto.builder()
                         .message("Facility assigned to room")

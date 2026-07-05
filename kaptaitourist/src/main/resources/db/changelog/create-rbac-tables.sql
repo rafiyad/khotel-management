@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS permission
     url             VARCHAR(256)                NOT NULL,   -- path template, e.g. /api/v1/hotel/{hotelId}
     method          VARCHAR(16)                 NOT NULL,   -- GET | POST | PUT | DELETE
     service_name    VARCHAR(64),                            -- owning module
+    requires_ownership BOOLEAN                  NOT NULL DEFAULT FALSE,  -- owner must own the {hotelId} in the path (ADMIN bypasses)
     top_menu_id     VARCHAR(256),                           -- optional: drives frontend top menu
     left_menu_id    VARCHAR(256),                           -- optional: drives frontend left menu
     is_deleted      BOOLEAN                     NOT NULL DEFAULT FALSE,
@@ -74,7 +75,9 @@ INSERT INTO permission (id, permission_name, url, method, service_name)
 SELECT CAST(gen_random_uuid() AS VARCHAR), v.permission_name, v.url, v.method, v.service_name
 FROM (VALUES
     -- ── Public (no auth) ──
+    ('ALL', '/api/v1/welcome',                                    'GET',    'core'),
     ('ALL', '/api/v1/auth/register',                              'POST',   'user'),
+    ('ALL', '/api/v1/auth/register-owner',                        'POST',   'user'),
     ('ALL', '/api/v1/auth/login',                                 'POST',   'user'),
     ('ALL', '/api/v1/hotel',                                      'GET',    'hotel'),
     ('ALL', '/api/v1/hotel/{hotelId}',                            'GET',    'hotel'),
@@ -85,8 +88,18 @@ FROM (VALUES
     -- ── Auth / user (protected) ──
     ('AUTH.ME',              '/api/v1/auth/me',                   'GET',    'user'),
     ('AUTH.PROFILE',         '/api/v1/auth/profile',              'GET',    'user'),
+    ('AUTH.CHANGE_PASSWORD', '/api/v1/auth/change-password',      'POST',   'user'),
     ('USER.LIST',            '/api/v1/user',                      'GET',    'user'),
     ('USER.PROMOTE',         '/api/v1/user/{userId}/promote',     'POST',   'user'),
+
+    -- ── Owner enlistment requests (admin review) ──
+    ('OWNER_REQUEST.LIST',   '/api/v1/owner-request',                       'GET',    'user'),
+    ('OWNER_REQUEST.APPROVE','/api/v1/owner-request/{requestId}/approve',   'POST',   'user'),
+    ('OWNER_REQUEST.REJECT', '/api/v1/owner-request/{requestId}/reject',    'POST',   'user'),
+
+    -- ── Scoped hotel lists ──
+    ('OWNER_HOTEL.LIST',     '/api/v1/owner/hotel',               'GET',    'hotel'),
+    ('ADMIN_HOTEL.LIST',     '/api/v1/admin/hotel',               'GET',    'hotel'),
 
     -- ── Hotel ──
     ('HOTEL.CREATE',         '/api/v1/hotel',                     'POST',   'hotel'),
@@ -98,21 +111,21 @@ FROM (VALUES
     ('ROOM.UPDATE',          '/api/v1/hotel/{hotelId}/room/{roomId}',         'PUT',    'room'),
     ('ROOM.DELETE',          '/api/v1/hotel/{hotelId}/room/{roomId}',         'DELETE', 'room'),
 
-    -- ── Facility catalog ──
+    -- ── Facility catalog (reads public so visitors can see amenities; writes admin) ──
     ('FACILITY.CREATE',      '/api/v1/facility',                  'POST',   'facility'),
-    ('FACILITY.LIST',        '/api/v1/facility',                  'GET',    'facility'),
-    ('FACILITY.GET',         '/api/v1/facility/{facilityId}',     'GET',    'facility'),
+    ('ALL',                  '/api/v1/facility',                  'GET',    'facility'),
+    ('ALL',                  '/api/v1/facility/{facilityId}',     'GET',    'facility'),
     ('FACILITY.UPDATE',      '/api/v1/facility/{facilityId}',     'PUT',    'facility'),
     ('FACILITY.DELETE',      '/api/v1/facility/{facilityId}',     'DELETE', 'facility'),
 
-    -- ── Facility ↔ hotel ──
+    -- ── Facility ↔ hotel (list public; assign/remove owner+admin) ──
     ('HOTEL_FACILITY.ASSIGN','/api/v1/hotel/{hotelId}/facility',                  'POST',   'facility'),
-    ('HOTEL_FACILITY.LIST',  '/api/v1/hotel/{hotelId}/facility',                  'GET',    'facility'),
+    ('ALL',                  '/api/v1/hotel/{hotelId}/facility',                  'GET',    'facility'),
     ('HOTEL_FACILITY.REMOVE','/api/v1/hotel/{hotelId}/facility/{facilityId}',     'DELETE', 'facility'),
 
-    -- ── Facility ↔ room ──
+    -- ── Facility ↔ room (list public; assign/remove owner+admin) ──
     ('ROOM_FACILITY.ASSIGN', '/api/v1/hotel/{hotelId}/room/{roomId}/facility',                'POST',   'facility'),
-    ('ROOM_FACILITY.LIST',   '/api/v1/hotel/{hotelId}/room/{roomId}/facility',                'GET',    'facility'),
+    ('ALL',                  '/api/v1/hotel/{hotelId}/room/{roomId}/facility',                'GET',    'facility'),
     ('ROOM_FACILITY.REMOVE', '/api/v1/hotel/{hotelId}/room/{roomId}/facility/{facilityId}',   'DELETE', 'facility'),
 
     -- ── Booking ──
@@ -126,15 +139,39 @@ FROM (VALUES
     ('IMAGE.LIST',           '/api/v1/image/{hotelId}',               'GET',    'image'),
     ('IMAGE.GET',            '/api/v1/image/{hotelId}/{imageId}',     'GET',    'image'),
     ('IMAGE.UPDATE',         '/api/v1/image/{hotelId}/{imageId}',     'PUT',    'image'),
-    ('IMAGE.DELETE',         '/api/v1/image/{hotelId}/{imageId}',     'DELETE', 'image'),
-    ('IMAGE.DELETE_ALL',     '/api/v1/image/{hotelId}',               'DELETE', 'image'),
+    ('IMAGE.DELETE',         '/api/v1/image/{hotelId}/{imageId}',         'DELETE', 'image'),
+    ('IMAGE.DELETE_ALL',     '/api/v1/image/{hotelId}',                   'DELETE', 'image'),
+    ('IMAGE.SET_PRIMARY',    '/api/v1/image/{hotelId}/{imageId}/primary', 'POST',   'image'),
 
     -- ── Room-level images (nested route) ──
     ('ROOM_IMAGE.SAVE',      '/api/v1/hotel/{hotelId}/room/{roomId}/image',              'POST',   'image'),
     ('ROOM_IMAGE.LIST',      '/api/v1/hotel/{hotelId}/room/{roomId}/image',              'GET',    'image'),
-    ('ROOM_IMAGE.DELETE',    '/api/v1/hotel/{hotelId}/room/{roomId}/image/{imageId}',    'DELETE', 'image'),
-    ('ROOM_IMAGE.DELETE_ALL','/api/v1/hotel/{hotelId}/room/{roomId}/image',              'DELETE', 'image')
+    ('ROOM_IMAGE.DELETE',    '/api/v1/hotel/{hotelId}/room/{roomId}/image/{imageId}',            'DELETE', 'image'),
+    ('ROOM_IMAGE.DELETE_ALL','/api/v1/hotel/{hotelId}/room/{roomId}/image',                      'DELETE', 'image'),
+    ('ROOM_IMAGE.SET_PRIMARY','/api/v1/hotel/{hotelId}/room/{roomId}/image/{imageId}/primary',   'POST',   'image'),
+
+    -- ── Owner/admin dashboard ──
+    ('DASHBOARD.GET',        '/api/v1/hotel/{hotelId}/dashboard',                        'GET',    'dashboard'),
+    -- ── Admin-only platform dashboard ──
+    ('ADMIN_DASHBOARD.GET',  '/api/v1/admin/dashboard',                                  'GET',    'dashboard')
 ) AS v(permission_name, url, method, service_name);
+
+-- ── Ownership-scoped endpoints: an owner may use these only for hotels they own
+--    (ADMIN bypasses the ownership check in RbacFilter). Booking CREATE is intentionally
+--    NOT here — any authenticated guest may book a room. ──
+UPDATE permission SET requires_ownership = TRUE
+WHERE permission_name IN (
+    'HOTEL.UPDATE', 'HOTEL.DELETE',
+    'ROOM.CREATE', 'ROOM.UPDATE', 'ROOM.DELETE',
+    'HOTEL_FACILITY.ASSIGN', 'HOTEL_FACILITY.REMOVE',
+    'ROOM_FACILITY.ASSIGN', 'ROOM_FACILITY.REMOVE',
+    'BOOKING.LIST', 'BOOKING.GET', 'BOOKING.CANCEL',
+    'IMAGE.SAVE', 'IMAGE.LIST', 'IMAGE.GET', 'IMAGE.UPDATE', 'IMAGE.DELETE', 'IMAGE.DELETE_ALL',
+    'IMAGE.SET_PRIMARY',
+    'ROOM_IMAGE.SAVE', 'ROOM_IMAGE.LIST', 'ROOM_IMAGE.DELETE', 'ROOM_IMAGE.DELETE_ALL',
+    'ROOM_IMAGE.SET_PRIMARY',
+    'DASHBOARD.GET'
+);
 
 -- ═════════════════════════ Seed: role → permission links ════════════════════════
 -- ADMIN: every protected endpoint.
@@ -143,17 +180,21 @@ SELECT CAST(gen_random_uuid() AS VARCHAR), r.id, p.id
 FROM role r CROSS JOIN permission p
 WHERE r.name = 'ADMIN' AND p.permission_name <> 'ALL';
 
--- HOTEL_OWNER: everything except user administration and facility-catalog writes.
+-- HOTEL_OWNER: everything except user administration, facility-catalog writes, and the
+-- platform-wide admin dashboard.
 INSERT INTO role_permission (id, role_id, permission_id)
 SELECT CAST(gen_random_uuid() AS VARCHAR), r.id, p.id
 FROM role r CROSS JOIN permission p
 WHERE r.name = 'HOTEL_OWNER'
   AND p.permission_name NOT IN ('ALL', 'USER.LIST', 'USER.PROMOTE',
-                                'FACILITY.CREATE', 'FACILITY.UPDATE', 'FACILITY.DELETE');
+                                'ADMIN_DASHBOARD.GET', 'ADMIN_HOTEL.LIST',
+                                'OWNER_REQUEST.LIST', 'OWNER_REQUEST.APPROVE', 'OWNER_REQUEST.REJECT');
+-- Note: FACILITY.CREATE/UPDATE/DELETE are now granted to HOTEL_OWNER (removed from the exclusion
+-- above); the service enforces "owner may only update/delete facilities they created (created_by_id)".
 
 -- USER: own identity views + booking a room (browsing is public).
 INSERT INTO role_permission (id, role_id, permission_id)
 SELECT CAST(gen_random_uuid() AS VARCHAR), r.id, p.id
 FROM role r CROSS JOIN permission p
 WHERE r.name = 'USER'
-  AND p.permission_name IN ('AUTH.ME', 'AUTH.PROFILE', 'BOOKING.CREATE');
+  AND p.permission_name IN ('AUTH.ME', 'AUTH.PROFILE', 'AUTH.CHANGE_PASSWORD', 'BOOKING.CREATE');

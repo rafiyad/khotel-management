@@ -18,6 +18,7 @@ public class PermissionEntity {
     private String permissionName;
     private String url;
     private String method;
+    private Boolean requiresOwnership;
     private LocalDateTime createdAt;
 
 

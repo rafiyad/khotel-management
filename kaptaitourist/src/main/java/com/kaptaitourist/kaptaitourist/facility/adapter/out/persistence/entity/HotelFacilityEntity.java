@@ -24,6 +24,7 @@ public class HotelFacilityEntity implements Persistable<String> {
     private String hotelId;
     private String facilityId;
     private Boolean isComplimentary;
+    private Boolean isAvailable;
     private BigDecimal additionalCharge;
     private String notes;
     private String createdBy;

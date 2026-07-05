@@ -9,6 +9,7 @@ import com.kaptaitourist.kaptaitourist.Room.domain.Room;
 import com.kaptaitourist.kaptaitourist.core.exception.HotelNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.RoomNotFoundException;
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
+import com.kaptaitourist.kaptaitourist.facility.application.port.out.FacilityPort;
 import com.kaptaitourist.kaptaitourist.hotel.application.port.out.HotelPort;
 import com.kaptaitourist.kaptaitourist.image.application.port.in.ImageUseCase;
 import com.kaptaitourist.kaptaitourist.image.application.port.out.ImagePort;
@@ -32,6 +33,7 @@ public class RoomService implements RoomUseCase {
     private final ImagePort imagePort;
     private final ImageUseCase imageUseCase;
     private final HotelPort hotelPort;
+    private final FacilityPort facilityPort;
 
     // ----------------------------------- Create -------------------------------------------
 
@@ -63,7 +65,8 @@ public class RoomService implements RoomUseCase {
                     return roomPort.save(room);
                 })
                 .map(saved -> {
-                    saved.setImages(List.of()); // a freshly created room has no images yet
+                    saved.setImages(List.of());     // a freshly created room has no images yet
+                    saved.setFacilities(List.of()); // nor any facilities assigned yet
                     return RoomResponseDto.builder()
                             .message("Room created successfully")
                             .roomData(saved)
@@ -79,7 +82,7 @@ public class RoomService implements RoomUseCase {
     public Mono<RoomListResponseDto> findAllByHotelId(String hotelId) {
         return roomPort.findAllByHotelId(hotelId)
                 .collectList()
-                .flatMap(this::attachImages)
+                .flatMap(this::attachDetails)
                 .map(rooms -> RoomListResponseDto.builder()
                         .message("Rooms retrieved successfully")
                         .totalRecords(rooms.size())
@@ -95,7 +98,7 @@ public class RoomService implements RoomUseCase {
         return roomPort.findByIdAndHotelId(roomId, hotelId)
                 .switchIfEmpty(Mono.error(new RoomNotFoundException(
                         "Room not found with id: " + roomId + " for hotel: " + hotelId)))
-                .flatMap(this::attachImages)
+                .flatMap(this::attachDetails)
                 .map(room -> RoomResponseDto.builder()
                         .message("Room retrieved successfully")
                         .roomData(room)
@@ -136,7 +139,7 @@ public class RoomService implements RoomUseCase {
                             .build();
                     return roomPort.save(updated);
                 })
-                .flatMap(this::attachImages)
+                .flatMap(this::attachDetails)
                 .map(room -> RoomResponseDto.builder()
                         .message("Room updated successfully")
                         .roomData(room)
@@ -161,27 +164,38 @@ public class RoomService implements RoomUseCase {
 
     // ----------------------------------- Helpers ------------------------------------------
 
-    /** Attach the gallery to a single room. */
-    private Mono<Room> attachImages(Room room) {
-        return imagePort.findAllByRoomId(room.getId())
-                .collectList()
-                .map(images -> {
-                    room.setImages(images);
+    /** Attach the gallery and assigned facilities to a single room. */
+    private Mono<Room> attachDetails(Room room) {
+        return Mono.zip(
+                        imagePort.findAllByRoomId(room.getId()).collectList(),
+                        facilityPort.findRoomFacilities(room.getId()).collectList())
+                .map(t -> {
+                    room.setImages(t.getT1());
+                    room.setFacilities(t.getT2());
                     return room;
                 });
     }
 
-    /** Batch-attach galleries to many rooms in one image query (avoids N+1). */
-    private Mono<List<Room>> attachImages(List<Room> rooms) {
+    /**
+     * Batch-attach galleries + facilities to many rooms. Images use a single batched query to
+     * avoid N+1; facilities are fetched per room (no batch port method), bounded to one hotel's
+     * rooms per call.
+     */
+    private Mono<List<Room>> attachDetails(List<Room> rooms) {
         if (rooms.isEmpty())
             return Mono.just(rooms);
 
         List<String> roomIds = rooms.stream().map(Room::getId).toList();
-        return imagePort.findAllByRoomIdIn(roomIds)
-                .collectMultimap(Image::getRoomId)
-                .map(imagesByRoom -> {
-                    rooms.forEach(room -> room.setImages(
-                            new ArrayList<>(imagesByRoom.getOrDefault(room.getId(), List.of()))));
+        return Mono.zip(
+                        imagePort.findAllByRoomIdIn(roomIds).collectMultimap(Image::getRoomId),
+                        facilityPort.findRoomFacilitiesByRoomIds(roomIds))
+                .map(t -> {
+                    var imagesByRoom = t.getT1();
+                    var facilitiesByRoom = t.getT2();
+                    rooms.forEach(room -> {
+                        room.setImages(new ArrayList<>(imagesByRoom.getOrDefault(room.getId(), List.of())));
+                        room.setFacilities(facilitiesByRoom.getOrDefault(room.getId(), List.of()));
+                    });
                     return rooms;
                 });
     }

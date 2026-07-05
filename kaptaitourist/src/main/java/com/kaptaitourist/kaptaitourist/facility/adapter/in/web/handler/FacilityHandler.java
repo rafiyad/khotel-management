@@ -2,6 +2,7 @@ package com.kaptaitourist.kaptaitourist.facility.adapter.in.web.handler;
 
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
 import com.kaptaitourist.kaptaitourist.core.exception.handler.GlobalExceptionHandler;
+import com.kaptaitourist.kaptaitourist.core.security.UserContextService;
 import com.kaptaitourist.kaptaitourist.facility.adapter.in.web.dto.FacilityAssignmentRequestDto;
 import com.kaptaitourist.kaptaitourist.facility.adapter.in.web.dto.FacilityRequestDto;
 import com.kaptaitourist.kaptaitourist.facility.application.port.in.FacilityUseCase;
@@ -21,13 +22,15 @@ public class FacilityHandler {
 
     private final FacilityUseCase facilityUseCase;
     private final GlobalExceptionHandler exceptionHandler;
+    private final UserContextService userContextService;
 
     // ─────────────────────────────── Catalog ─────────────────────────────────
 
     public Mono<ServerResponse> createFacility(ServerRequest request) {
-        return request.bodyToMono(FacilityRequestDto.class)
-                .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
-                .flatMap(facilityUseCase::createFacility)
+        return Mono.zip(request.bodyToMono(FacilityRequestDto.class)
+                        .switchIfEmpty(Mono.error(new ValidationException("Request body is required"))),
+                        userContextService.getAuthContext())
+                .flatMap(t -> facilityUseCase.createFacility(t.getT1(), t.getT2().userId()))
                 .flatMap(result -> ServerResponse.status(HttpStatus.CREATED)
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(result))
@@ -52,9 +55,10 @@ public class FacilityHandler {
 
     public Mono<ServerResponse> updateFacility(ServerRequest request) {
         String facilityId = request.pathVariable("facilityId");
-        return request.bodyToMono(FacilityRequestDto.class)
-                .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
-                .flatMap(dto -> facilityUseCase.updateFacility(facilityId, dto))
+        return Mono.zip(request.bodyToMono(FacilityRequestDto.class)
+                        .switchIfEmpty(Mono.error(new ValidationException("Request body is required"))),
+                        userContextService.getAuthContext())
+                .flatMap(t -> facilityUseCase.updateFacility(facilityId, t.getT1(), t.getT2().userId(), t.getT2().isAdmin()))
                 .flatMap(result -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(result))
@@ -62,7 +66,9 @@ public class FacilityHandler {
     }
 
     public Mono<ServerResponse> deleteFacility(ServerRequest request) {
-        return facilityUseCase.deleteFacility(request.pathVariable("facilityId"))
+        String facilityId = request.pathVariable("facilityId");
+        return userContextService.getAuthContext()
+                .flatMap(ctx -> facilityUseCase.deleteFacility(facilityId, ctx.userId(), ctx.isAdmin()))
                 .then(ServerResponse.noContent().build())
                 .onErrorResume(exceptionHandler::handle);
     }

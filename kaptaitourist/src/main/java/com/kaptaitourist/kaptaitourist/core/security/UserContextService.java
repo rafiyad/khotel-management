@@ -38,6 +38,25 @@ public class UserContextService {
                 });
     }
 
+    /** The authenticated caller's id and whether they hold the ADMIN role — for resource-level checks. */
+    public Mono<AuthContext> getAuthContext() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .filter(auth -> auth != null && auth.isAuthenticated())
+                .switchIfEmpty(Mono.error(new IllegalStateException("No authenticated user in security context")))
+                .map(auth -> {
+                    String userId = String.valueOf(auth.getPrincipal());
+                    boolean isAdmin = auth.getAuthorities().stream()
+                            .map(GrantedAuthority::getAuthority)
+                            .anyMatch(a -> a.equals("ADMIN") || a.equals("ROLE_ADMIN"));
+                    return new AuthContext(userId, isAdmin);
+                });
+    }
+
+    /** Minimal auth snapshot for resource-level authorization. */
+    public record AuthContext(String userId, boolean isAdmin) {
+    }
+
     private String extractRole(Collection<? extends GrantedAuthority> authorities) {
         return authorities.stream()
                 .findFirst()

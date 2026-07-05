@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS khotel_hotel_facility
     hotel_id          VARCHAR(36)                 NOT NULL,
     facility_id       VARCHAR(36)                 NOT NULL,
     is_complimentary  BOOLEAN                     NOT NULL DEFAULT TRUE,
+    is_available      BOOLEAN                     NOT NULL DEFAULT TRUE,   -- owner can mark temporarily unavailable
     additional_charge NUMERIC(12, 2),
     notes             VARCHAR(255),
     created_by        VARCHAR(255),
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS khotel_room_facility
     room_id           VARCHAR(36)                 NOT NULL,
     facility_id       VARCHAR(36)                 NOT NULL,
     is_complimentary  BOOLEAN                     NOT NULL DEFAULT TRUE,
+    is_available      BOOLEAN                     NOT NULL DEFAULT TRUE,   -- owner can mark temporarily unavailable
     additional_charge NUMERIC(12, 2),
     notes             VARCHAR(255),
     created_by        VARCHAR(255),

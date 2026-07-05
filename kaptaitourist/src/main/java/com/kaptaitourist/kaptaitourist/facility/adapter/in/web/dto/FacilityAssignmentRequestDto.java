@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 public class FacilityAssignmentRequestDto {
     private String facilityId;
     private Boolean isComplimentary;     // defaults to true
+    private Boolean isAvailable;         // defaults to true; set false to mark temporarily unavailable
     private BigDecimal additionalCharge; // optional, when not complimentary
     private String notes;
     private String createdBy;

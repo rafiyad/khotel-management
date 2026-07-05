@@ -1,6 +1,7 @@
 package com.kaptaitourist.kaptaitourist.user.application.port.in;
 
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.AuthResponseDto;
+import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.ChangePasswordRequestDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.LoginRequestDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.ProfileResponseDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.RegisterRequestDto;
@@ -21,4 +22,7 @@ public interface UserUseCase {
     Mono<UserListResponseDto> findAll();
 
     Mono<UserResponseDto> promoteToHotelOwner(String userId);
+
+    /** Self-service password change for the authenticated user (verifies the current password). */
+    Mono<Void> changePassword(String userId, ChangePasswordRequestDto dto);
 }

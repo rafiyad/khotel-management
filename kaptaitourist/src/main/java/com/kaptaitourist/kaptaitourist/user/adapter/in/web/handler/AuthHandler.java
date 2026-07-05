@@ -3,6 +3,7 @@ package com.kaptaitourist.kaptaitourist.user.adapter.in.web.handler;
 import com.kaptaitourist.kaptaitourist.core.exception.InvalidCredentialsException;
 import com.kaptaitourist.kaptaitourist.core.exception.ValidationException;
 import com.kaptaitourist.kaptaitourist.core.exception.handler.GlobalExceptionHandler;
+import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.ChangePasswordRequestDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.LoginRequestDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.RegisterRequestDto;
 import com.kaptaitourist.kaptaitourist.user.application.port.in.UserUseCase;
@@ -72,6 +73,21 @@ public class AuthHandler {
                 .flatMap(result -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(result))
+                .onErrorResume(exceptionHandler::handle);
+    }
+
+    // ─────────────────────────────── Change password ─────────────────────────
+
+    public Mono<ServerResponse> changePassword(ServerRequest request) {
+        return request.principal()
+                .switchIfEmpty(Mono.error(new InvalidCredentialsException("Not authenticated")))
+                .map(Principal::getName)
+                .flatMap(userId -> request.bodyToMono(ChangePasswordRequestDto.class)
+                        .switchIfEmpty(Mono.error(new ValidationException("Request body is required")))
+                        .flatMap(dto -> userUseCase.changePassword(userId, dto)))
+                .then(ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(java.util.Map.of("message", "Password changed successfully")))
                 .onErrorResume(exceptionHandler::handle);
     }
 

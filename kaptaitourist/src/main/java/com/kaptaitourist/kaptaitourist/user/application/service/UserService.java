@@ -4,6 +4,7 @@ import com.kaptaitourist.kaptaitourist.core.exception.*;
 import com.kaptaitourist.kaptaitourist.core.security.JwtService;
 import com.kaptaitourist.kaptaitourist.core.util.MaskUtil;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.AuthResponseDto;
+import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.ChangePasswordRequestDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.ProfileDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.ProfileResponseDto;
 import com.kaptaitourist.kaptaitourist.user.adapter.in.web.dto.LoginRequestDto;
@@ -84,7 +85,7 @@ public class UserService implements UserUseCase {
                         .then(userPort.findById(saved.getId())))
                 .map(user -> UserResponseDto.builder()
                         .message("Registration successful")
-                        .userData(user)
+                        .userData(withoutSecret(user))
                         .build())
                 .doOnSuccess(r -> log.info("Registered user: {}", r.getUserData().getEmail()))
                 .doOnError(e -> log.error("Error registering user: {}", e.getMessage()));
@@ -94,13 +95,18 @@ public class UserService implements UserUseCase {
 
     @Override
     public Mono<AuthResponseDto> login(LoginRequestDto dto) {
-        if (dto.getEmail() == null || dto.getPassword() == null)
-            return Mono.error(new ValidationException("email and password are required"));
+        boolean hasEmail = dto.getEmail() != null && !dto.getEmail().isBlank();
+        boolean hasMobile = dto.getMobile() != null && !dto.getMobile().isBlank();
+        if ((!hasEmail && !hasMobile) || dto.getPassword() == null)
+            return Mono.error(new ValidationException("email or mobile, and password, are required"));
 
-        String email = dto.getEmail().trim().toLowerCase();
+        // Look up by whichever identifier was supplied (email takes precedence).
+        Mono<com.kaptaitourist.kaptaitourist.user.domain.User> found = hasEmail
+                ? userPort.findByEmail(dto.getEmail().trim().toLowerCase())
+                : userPort.findByMobile(dto.getMobile().trim());
 
-        return userPort.findByEmail(email)
-                .switchIfEmpty(Mono.error(new InvalidCredentialsException("Invalid email or password")))
+        return found
+                .switchIfEmpty(Mono.error(new InvalidCredentialsException("Invalid email/mobile or password")))
                 .flatMap(user -> {
                     if (!passwordEncoder.matches(dto.getPassword(), user.getPasswordHash()))
                         return Mono.error(new InvalidCredentialsException("Invalid email or password"));
@@ -116,7 +122,8 @@ public class UserService implements UserUseCase {
                             .roles(user.getRoles())
                             .build());
                 })
-                .doOnError(e -> log.warn("Login failed for {}: {}", email, e.getMessage()));
+                .doOnError(e -> log.warn("Login failed for {}: {}",
+                        hasEmail ? dto.getEmail() : dto.getMobile(), e.getMessage()));
     }
 
     // ----------------------------------- Current user -------------------------------------
@@ -127,7 +134,7 @@ public class UserService implements UserUseCase {
                 .switchIfEmpty(Mono.error(new UserNotFoundException("User not found with id: " + userId)))
                 .map(user -> UserResponseDto.builder()
                         .message("Current user")
-                        .userData(user)
+                        .userData(withoutSecret(user))
                         .build());
     }
 
@@ -156,6 +163,7 @@ public class UserService implements UserUseCase {
     @Override
     public Mono<UserListResponseDto> findAll() {
         return userPort.findAll()
+                .map(this::withoutSecret)
                 .collectList()
                 .map(list -> UserListResponseDto.builder()
                         .message("Users retrieved successfully")
@@ -174,8 +182,49 @@ public class UserService implements UserUseCase {
                         .then(userPort.findById(userId)))
                 .map(user -> UserResponseDto.builder()
                         .message("User promoted to HOTEL_OWNER")
-                        .userData(user)
+                        .userData(withoutSecret(user))
                         .build())
                 .doOnSuccess(r -> log.info("Promoted user {} to HOTEL_OWNER", userId));
+    }
+
+    // ----------------------------------- Change password ----------------------------------
+
+    @Override
+    public Mono<Void> changePassword(String userId, ChangePasswordRequestDto dto) {
+        if (dto.getCurrentPassword() == null || dto.getCurrentPassword().isBlank())
+            return Mono.error(new ValidationException("currentPassword is required"));
+        if (dto.getNewPassword() == null || dto.getNewPassword().length() < 6)
+            return Mono.error(new ValidationException("newPassword must be at least 6 characters"));
+        if (dto.getNewPassword().equals(dto.getCurrentPassword()))
+            return Mono.error(new ValidationException("newPassword must be different from the current password"));
+
+        return userPort.findById(userId)
+                .switchIfEmpty(Mono.error(new UserNotFoundException("User not found with id: " + userId)))
+                .flatMap(user -> {
+                    // Verify the caller actually knows the current password before changing it.
+                    if (!passwordEncoder.matches(dto.getCurrentPassword(), user.getPasswordHash()))
+                        return Mono.error(new InvalidCredentialsException("Current password is incorrect"));
+                    user.setPasswordHash(passwordEncoder.encode(dto.getNewPassword()));
+                    user.setUpdatedBy(userId);
+                    user.setUpdatedAt(LocalDateTime.now());
+                    return userPort.save(user);
+                })
+                .doOnSuccess(u -> log.info("Password changed for user {}", userId))
+                .doOnError(e -> log.warn("Password change failed for {}: {}", userId, e.getMessage()))
+                .then();
+    }
+
+    // ----------------------------------- Helpers ------------------------------------------
+
+    /**
+     * Clears the password hash before a domain User is handed to the web layer. Guarantees the
+     * hash never serializes regardless of which Jackson (2 vs 3 / annotation recognition) the
+     * WebFlux codec uses — the {@code @JsonIgnore} on the field is kept as a second line of defence.
+     */
+    private User withoutSecret(User user) {
+        if (user != null) {
+            user.setPasswordHash(null);
+        }
+        return user;
     }
 }

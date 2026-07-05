@@ -1,5 +1,6 @@
 package com.kaptaitourist.kaptaitourist.Room.domain;
 
+import com.kaptaitourist.kaptaitourist.facility.domain.AssignedFacility;
 import com.kaptaitourist.kaptaitourist.image.domain.Image;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -34,4 +35,5 @@ public class Room {
     private LocalDateTime updatedAt;
     private String updatedBy;
     private List<Image> images;
+    private List<AssignedFacility> facilities;
 }

@@ -53,3 +53,6 @@ application-local.properties
 
 ### properties file ##
 kaptaitourist/src/main/resources/application-tashfi.properties
+### logback file output ##
+kaptaitourist/logs/
+logs/

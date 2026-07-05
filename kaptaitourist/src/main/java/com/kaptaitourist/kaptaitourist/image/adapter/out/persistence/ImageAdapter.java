@@ -107,4 +107,19 @@ public class ImageAdapter implements ImagePort {
         return imageRepository.deleteAllByRoomId(roomId)
                 .doOnError(e -> log.error("Error deleting all images for roomId {}: {}", roomId, e.getMessage()));
     }
+
+    @Override
+    public Mono<Void> clearHotelPrimary(String hotelId) {
+        return imageRepository.clearHotelPrimary(hotelId).then();
+    }
+
+    @Override
+    public Mono<Void> clearRoomPrimary(String roomId) {
+        return imageRepository.clearRoomPrimary(roomId).then();
+    }
+
+    @Override
+    public Mono<Void> markPrimary(String imageId) {
+        return imageRepository.markPrimary(imageId).then();
+    }
 }

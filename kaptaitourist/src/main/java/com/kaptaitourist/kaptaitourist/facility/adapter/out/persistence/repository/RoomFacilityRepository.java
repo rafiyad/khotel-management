@@ -12,6 +12,9 @@ public interface RoomFacilityRepository extends R2dbcRepository<RoomFacilityEnti
     @Query("SELECT * FROM khotel_room_facility WHERE room_id = :roomId")
     Flux<RoomFacilityEntity> findAllByRoomId(String roomId);
 
+    @Query("SELECT * FROM khotel_room_facility WHERE room_id IN (:roomIds)")
+    Flux<RoomFacilityEntity> findAllByRoomIdIn(java.util.Collection<String> roomIds);
+
     @Query("SELECT * FROM khotel_room_facility WHERE room_id = :roomId AND facility_id = :facilityId")
     Mono<RoomFacilityEntity> findByRoomIdAndFacilityId(String roomId, String facilityId);
 

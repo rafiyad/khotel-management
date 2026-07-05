@@ -19,6 +19,7 @@ public class Facility {
     private String description;
     private String appliesTo;   // HOTEL | ROOM | BOTH
     private Boolean isActive;
+    private String createdById;  // creator's user id (ownership); null = legacy/admin catalog
     private Long version;
     private String createdBy;
     private LocalDateTime createdAt;

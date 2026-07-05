@@ -9,6 +9,103 @@
 GET {{baseUrl}}/hotel
 Accept: application/json
 
+### Public — search hotels by name (case-insensitive substring)
+GET {{baseUrl}}/hotel?search=lakeside
+Accept: application/json
+
+### Public — paginated hotel list
+GET {{baseUrl}}/hotel?page=0&size=10
+Accept: application/json
+
+### Public — filter hotels having ALL given facilities (repeat facility=), + name + paging
+GET {{baseUrl}}/hotel?facility=FACILITY_ID_1&facility=FACILITY_ID_2&search=lake&page=0&size=10
+Accept: application/json
+
+### Public — hotels with a room free for these dates (+ guests, combinable with search/facility/paging)
+GET {{baseUrl}}/hotel?checkIn=2026-08-01&checkOut=2026-08-04&guests=2&page=0&size=10
+Accept: application/json
+
+### Owner/Admin — hotel dashboard (needs a token for an owner of this hotel, or an admin)
+# @token = paste the JWT from POST /auth/login
+GET {{baseUrl}}/hotel/{{hotelId}}/dashboard
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Admin — platform-wide dashboard (admin token required)
+GET {{baseUrl}}/admin/dashboard
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Any authenticated user — change own password
+POST {{baseUrl}}/auth/change-password
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "currentPassword": "secret123",
+  "newPassword": "newSecret456"
+}
+
 ### Public — get one hotel by id (no token)
 GET {{baseUrl}}/hotel/{{hotelId}}
 Accept: application/json
+
+### ─────────────── NestJS-parity additions ───────────────
+
+### Public — welcome smoke test
+GET {{baseUrl}}/welcome
+Accept: application/json
+
+### Public — login by mobile (instead of email)
+POST {{baseUrl}}/auth/login
+Accept: application/json
+Content-Type: application/json
+
+{ "mobile": "+8801700000000", "password": "secret123" }
+
+### Public — register as owner (creates USER + PENDING enlistment request)
+POST {{baseUrl}}/auth/register-owner
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "Owner One", "email": "owner1@example.com", "mobile": "+8801711111111",
+  "gender": "MALE", "password": "secret123",
+  "hotelName": "Lakeside Retreat", "message": "Please enlist my hotel"
+}
+
+### Admin — list owner requests (optional ?status=PENDING|APPROVED|REJECTED)
+GET {{baseUrl}}/owner-request?status=PENDING
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Admin — approve an owner request (grants HOTEL_OWNER)
+POST {{baseUrl}}/owner-request/REQUEST_ID/approve
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Admin — reject an owner request
+POST {{baseUrl}}/owner-request/REQUEST_ID/reject
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Owner/Admin — the caller's own hotels (enriched)
+GET {{baseUrl}}/owner/hotel
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Admin — all hotels + owners + counts
+GET {{baseUrl}}/admin/hotel
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Owner/Admin — set a hotel's cover image
+POST {{baseUrl}}/image/{{hotelId}}/IMAGE_ID/primary
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Owner/Admin — set a room's cover image
+POST {{baseUrl}}/hotel/{{hotelId}}/room/ROOM_ID/image/IMAGE_ID/primary
+Accept: application/json
+Authorization: Bearer {{token}}

@@ -19,4 +19,8 @@ public interface ImagePort {
     Mono<Image> findByIdAndRoomId(String id, String roomId);
     Mono<Void> deleteByIdAndRoomId(String id, String roomId);
     Mono<Void> deleteAllByRoomId(String roomId);
+
+    Mono<Void> clearHotelPrimary(String hotelId);
+    Mono<Void> clearRoomPrimary(String roomId);
+    Mono<Void> markPrimary(String imageId);
 }

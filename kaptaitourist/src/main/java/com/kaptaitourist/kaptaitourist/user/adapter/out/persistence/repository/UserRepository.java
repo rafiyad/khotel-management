@@ -11,6 +11,9 @@ public interface UserRepository extends R2dbcRepository<UserEntity, String> {
     @Query("SELECT * FROM khotel_user WHERE email = :email")
     Mono<UserEntity> findByEmail(String email);
 
+    @Query("SELECT * FROM khotel_user WHERE mobile = :mobile")
+    Mono<UserEntity> findByMobile(String mobile);
+
     @Query("SELECT EXISTS(SELECT 1 FROM khotel_user WHERE email = :email)")
     Mono<Boolean> existsByEmail(String email);
 

@@ -14,6 +14,9 @@ import java.util.List;
 @NoArgsConstructor
 public class HotelListResponseDto {
     private String message;
-    private int totalRecords;
+    private int page;           // zero-based page index returned
+    private int size;           // page size used
+    private long totalRecords;  // total hotels matching the filter (across all pages)
+    private int totalPages;
     private List<Hotel> hotelData;
 }

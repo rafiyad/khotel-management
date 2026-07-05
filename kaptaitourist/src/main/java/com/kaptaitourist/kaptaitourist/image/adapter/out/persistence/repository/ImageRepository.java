@@ -47,4 +47,18 @@ public interface ImageRepository extends R2dbcRepository<ImageEntity, String> {
     @Modifying
     @Query("DELETE FROM khotel_attachment WHERE room_id = :roomId")
     Mono<Void> deleteAllByRoomId(String roomId);
+
+    // ---- Set-primary (unset existing primary in the same gallery, then mark the target) ----
+
+    @Modifying
+    @Query("UPDATE khotel_attachment SET is_primary = false WHERE hotel_id = :hotelId AND room_id IS NULL AND is_primary = true")
+    Mono<Long> clearHotelPrimary(String hotelId);
+
+    @Modifying
+    @Query("UPDATE khotel_attachment SET is_primary = false WHERE room_id = :roomId AND is_primary = true")
+    Mono<Long> clearRoomPrimary(String roomId);
+
+    @Modifying
+    @Query("UPDATE khotel_attachment SET is_primary = true WHERE id = :id")
+    Mono<Long> markPrimary(String id);
 }

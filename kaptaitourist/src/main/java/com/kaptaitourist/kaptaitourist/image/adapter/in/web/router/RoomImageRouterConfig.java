@@ -27,6 +27,7 @@ public class RoomImageRouterConfig {
                         .GET(ROOM_IMAGE_BASE, imageHandler::getRoomImages)
                         .DELETE(ROOM_IMAGE_BASE.concat(RouteNames.FIND_BY_IMAGE_ID), imageHandler::deleteRoomImage)
                         .DELETE(ROOM_IMAGE_BASE, imageHandler::deleteAllRoomImages)
+                        .POST(ROOM_IMAGE_BASE.concat(RouteNames.FIND_BY_IMAGE_ID).concat(RouteNames.PRIMARY), imageHandler::setRoomImagePrimary)
                 )
                 .build();
     }

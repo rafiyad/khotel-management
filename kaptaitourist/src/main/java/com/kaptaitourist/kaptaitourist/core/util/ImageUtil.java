@@ -11,9 +11,10 @@ import org.springframework.stereotype.Component;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -21,11 +22,9 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class ImageUtil {
 
-    private static final List<String> ALLOWED_TYPES = List.of(
-            "image/jpeg", "image/jpg", "image/png", "image/webp",
-            "image/heic", "image/heif"
-    );
-    private static final List<String> HEIF_TYPES = List.of("image/heic", "image/heif");
+    // Recognized HEIF/HEIC ISO-BMFF brands (the 4 bytes following the "ftyp" box marker).
+    private static final Set<String> HEIF_BRANDS = Set.of(
+            "heic", "heix", "hevc", "heim", "heis", "hevm", "hevs", "mif1", "msf1", "heif");
 
     // target: output is ~25% of original file size
     // achieved by scaling dimensions to 70% + quality 0.6
@@ -40,7 +39,8 @@ public class ImageUtil {
     public ProcessedImage process(byte[] rawBytes, String contentType, String originalFilename,
                                   String identifier, boolean generateThumbnail) throws IOException {
 
-        validateContentType(contentType);
+        if (rawBytes == null || rawBytes.length == 0)
+            throw new ValidationException("Uploaded image is empty.");
 
         if (rawBytes.length > MAX_BYTES) {
             double sizeInMB = rawBytes.length / (1024.0 * 1024.0);
@@ -48,8 +48,19 @@ public class ImageUtil {
                     String.format("Image must not exceed 4MB. Received: %.2fMB", sizeInMB));
         }
 
-        String effectiveContentType = contentType.toLowerCase();
-        if (HEIF_TYPES.contains(effectiveContentType)) {
+        // Trust the actual bytes, not the client-supplied Content-Type header. A HEIC photo
+        // renamed .jpg arrives as "image/jpeg", and without this it would skip HEIF conversion
+        // and hit the JPEG reader → "no suitable ImageReader found" → 500. Detection also rejects
+        // non-image uploads (e.g. an .exe labelled image/webp) up front with a clean 400.
+        String detectedType = detectImageType(rawBytes);
+        if (detectedType == null)
+            throw new ValidationException(
+                    "Unsupported or corrupt image. Allowed formats: JPEG, PNG, WEBP, HEIC/HEIF.");
+        if (contentType != null && !contentType.isBlank())
+            log.debug("Upload '{}' declared '{}', detected '{}'", originalFilename, contentType, detectedType);
+
+        String effectiveContentType = detectedType;
+        if ("image/heif".equals(effectiveContentType)) {
             rawBytes = convertHeicToJpeg(rawBytes);
             effectiveContentType = "image/jpeg";
             originalFilename = changeExtensionToJpg(originalFilename);
@@ -124,9 +135,19 @@ public class ImageUtil {
         // JPEGs, so we don't depend on it at all, for any format.
         builder.useExifOrientation(false);
 
-        builder.outputFormat(format)
-                .outputQuality(OUTPUT_QUALITY)
-                .toOutputStream(out);
+        try {
+            builder.outputFormat(format)
+                    .outputQuality(OUTPUT_QUALITY)
+                    .toOutputStream(out);
+        } catch (IOException e) {
+            // Thumbnailator throws UnsupportedFormatException ("No suitable ImageReader found for
+            // source data.") when ImageIO cannot decode these bytes. That is bad input, not a
+            // server fault — surface it as a 400 instead of falling through to a raw 500.
+            log.warn("Failed to decode {} image ({} bytes): {}", format, bytes.length, e.getMessage());
+            throw new ValidationException(
+                    "The image could not be decoded — it may be corrupt or use an unsupported "
+                            + format.toUpperCase() + " encoding.");
+        }
 
         return out.toByteArray();
     }
@@ -199,11 +220,26 @@ public class ImageUtil {
         return dot > 0 ? filename.substring(0, dot) + ".jpg" : filename + ".jpg";
     }
 
-    private void validateContentType(String contentType) {
-        String ct = contentType != null ? contentType.toLowerCase() : "";
-        if (!ALLOWED_TYPES.contains(ct))
-            throw new ValidationException(
-                    "Only JPEG, PNG, WEBP, and HEIC images are allowed. Received: " + ct);
+    /**
+     * Identifies the real image format from magic bytes, independent of the client's Content-Type
+     * header or filename extension. Returns a canonical mime type, or {@code null} if the bytes are
+     * not a supported image (JPEG, PNG, WEBP, HEIC/HEIF).
+     */
+    private String detectImageType(byte[] b) {
+        if (b == null || b.length < 12) return null;
+        // JPEG: FF D8 FF
+        if ((b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF) return "image/jpeg";
+        // PNG: 89 50 4E 47 (89 'P' 'N' 'G')
+        if ((b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') return "image/png";
+        // WEBP: "RIFF" .... "WEBP"
+        if (b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F'
+                && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P') return "image/webp";
+        // HEIF/HEIC: ISO-BMFF "ftyp" box at bytes 4..7, brand at 8..11
+        if (b[4] == 'f' && b[5] == 't' && b[6] == 'y' && b[7] == 'p') {
+            String brand = new String(b, 8, 4, StandardCharsets.US_ASCII).toLowerCase();
+            if (HEIF_BRANDS.contains(brand)) return "image/heif";
+        }
+        return null;
     }
 
     public String getExtension(String filename) {

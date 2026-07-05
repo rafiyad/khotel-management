@@ -2,6 +2,7 @@ package com.kaptaitourist.kaptaitourist.hotel.domain;
 
 
 import com.kaptaitourist.kaptaitourist.Room.domain.Room;
+import com.kaptaitourist.kaptaitourist.facility.domain.AssignedFacility;
 import com.kaptaitourist.kaptaitourist.image.domain.Image;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -32,6 +33,9 @@ public class Hotel {
     private String createdBy;
     private LocalDateTime updatedAt;
     private String updatedBy;
+    /** Derived, not persisted: the hotel's cover image for list/grid views (see HotelService.enrich). */
+    private String coverImageUrl;
     private List<Image> images;
+    private List<AssignedFacility> facilities;
     private List<Room> rooms;
 }

@@ -10,12 +10,12 @@ import reactor.core.publisher.Mono;
 
 public interface FacilityUseCase {
 
-    // ---- Catalog ----
-    Mono<FacilityResponseDto> createFacility(FacilityRequestDto dto);
+    // ---- Catalog ---- (creatorUserId from token; isAdmin bypasses the owner-only-own check)
+    Mono<FacilityResponseDto> createFacility(FacilityRequestDto dto, String creatorUserId);
     Mono<FacilityListResponseDto> findAll();
     Mono<FacilityResponseDto> findById(String id);
-    Mono<FacilityResponseDto> updateFacility(String id, FacilityRequestDto dto);
-    Mono<Void> deleteFacility(String id);
+    Mono<FacilityResponseDto> updateFacility(String id, FacilityRequestDto dto, String userId, boolean isAdmin);
+    Mono<Void> deleteFacility(String id, String userId, boolean isAdmin);
 
     // ---- Hotel assignment ----
     Mono<AssignedFacilityResponseDto> assignToHotel(String hotelId, FacilityAssignmentRequestDto dto);

@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 public class AssignedFacility {
     private Facility facility;
     private Boolean isComplimentary;
+    private Boolean isAvailable;      // false = offered but temporarily unavailable at this hotel/room
     private BigDecimal additionalCharge;
     private String notes;
 }

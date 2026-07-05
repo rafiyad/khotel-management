@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -28,6 +29,43 @@ public class ImageService implements ImageUseCase {
 
     private final ImagePort imagePort;
     private final StorageService storageService;
+
+    // -------------------- Set primary (cover) --------------------------------
+
+    @Override
+    @Transactional
+    public Mono<ImageSingleResponseDto> setHotelImagePrimary(String hotelId, String imageId) {
+        return imagePort.findByIdAndHotelId(imageId, hotelId)
+                .switchIfEmpty(Mono.error(new ImageNotFoundException(
+                        "Image not found with id: " + imageId + " for hotel: " + hotelId)))
+                .flatMap(image -> {
+                    if (image.getRoomId() != null)
+                        return Mono.error(new ValidationException(
+                                "This is a room image; use the room set-primary endpoint"));
+                    return imagePort.clearHotelPrimary(hotelId)
+                            .then(imagePort.markPrimary(imageId))
+                            .then(imagePort.findByIdAndHotelId(imageId, hotelId));
+                })
+                .map(updated -> ImageSingleResponseDto.builder()
+                        .message("Primary image updated")
+                        .imageData(updated)
+                        .build());
+    }
+
+    @Override
+    @Transactional
+    public Mono<ImageSingleResponseDto> setRoomImagePrimary(String hotelId, String roomId, String imageId) {
+        return imagePort.findByIdAndRoomId(imageId, roomId)
+                .switchIfEmpty(Mono.error(new ImageNotFoundException(
+                        "Image not found with id: " + imageId + " for room: " + roomId)))
+                .flatMap(image -> imagePort.clearRoomPrimary(roomId)
+                        .then(imagePort.markPrimary(imageId))
+                        .then(imagePort.findByIdAndRoomId(imageId, roomId)))
+                .map(updated -> ImageSingleResponseDto.builder()
+                        .message("Primary image updated")
+                        .imageData(updated)
+                        .build());
+    }
 
     // -------------------- Save (single/multi file) ---------------------------
 

@@ -200,6 +200,29 @@ public class ImageHandler {
                 .onErrorResume(exceptionHandler::handle);
     }
 
+    // ─────────────────────────────── Set primary ─────────────────────────────
+
+    public Mono<ServerResponse> setHotelImagePrimary(ServerRequest request) {
+        String hotelId = request.pathVariable("hotelId");
+        String imageId = request.pathVariable("imageId");
+        return imageUseCase.setHotelImagePrimary(hotelId, imageId)
+                .flatMap(result -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(result))
+                .onErrorResume(exceptionHandler::handle);
+    }
+
+    public Mono<ServerResponse> setRoomImagePrimary(ServerRequest request) {
+        String hotelId = request.pathVariable("hotelId");
+        String roomId = request.pathVariable("roomId");
+        String imageId = request.pathVariable("imageId");
+        return imageUseCase.setRoomImagePrimary(hotelId, roomId, imageId)
+                .flatMap(result -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(result))
+                .onErrorResume(exceptionHandler::handle);
+    }
+
     // ─────────────────────────────── Helpers ─────────────────────────────────
 
     private String firstFormValue(Part part) {

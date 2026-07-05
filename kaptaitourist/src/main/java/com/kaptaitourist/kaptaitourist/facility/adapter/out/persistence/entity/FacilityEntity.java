@@ -27,6 +27,7 @@ public class FacilityEntity implements Persistable<String> {
     private String description;
     private String appliesTo;
     private Boolean isActive;
+    private String createdById;   // creator's user id (ownership); null = legacy/admin catalog
     @Version
     private Long version;
     private String createdBy;

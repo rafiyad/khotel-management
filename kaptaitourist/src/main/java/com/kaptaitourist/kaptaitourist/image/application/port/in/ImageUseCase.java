@@ -22,6 +22,12 @@ public interface ImageUseCase {
 
     Mono<Void> deleteAllByHotelId(String hotelId);
 
+    /** Marks a hotel-gallery image as the primary (cover), unsetting any prior primary for the hotel. */
+    Mono<ImageSingleResponseDto> setHotelImagePrimary(String hotelId, String imageId);
+
+    /** Marks a room image as the room's primary (cover), unsetting any prior primary for the room. */
+    Mono<ImageSingleResponseDto> setRoomImagePrimary(String hotelId, String roomId, String imageId);
+
     // ---- Room-scoped ----
 
     Mono<ImageListResponseDto> findAllByRoomId(String roomId);

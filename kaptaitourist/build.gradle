@@ -41,8 +41,11 @@ dependencies {
 	//  rotation change
 	implementation 'com.drewnoakes:metadata-extractor:2.19.0'
 
-	// HEIC/HEIF/HEVC decoding for ImageIO — add the SAME plugin your other project uses.
+	// ImageIO format plugins (TwelveMonkeys). imageio-core alone registers NO readers;
+	// imageio-jpeg adds CMYK / YCCK / Adobe-APP14 JPEG support the stock JDK reader rejects,
+	// which is one cause of the "no suitable ImageReader" 500 on some real-world JPEGs.
 	implementation 'com.twelvemonkeys.imageio:imageio-core:3.13.1'
+	implementation 'com.twelvemonkeys.imageio:imageio-jpeg:3.13.1'
 
 //    for showing logs
     implementation 'com.google.code.gson:gson:2.14.0'

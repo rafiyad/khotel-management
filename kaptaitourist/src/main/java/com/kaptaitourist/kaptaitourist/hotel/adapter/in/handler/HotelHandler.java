@@ -13,6 +13,10 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.List;
+
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -38,7 +42,49 @@ public class HotelHandler {
     // ─────────────────────────────── Find all ────────────────────────────────
 
     public Mono<ServerResponse> getAllHotels(ServerRequest request) {
-        return hotelUseCase.findAll()
+        // ?search= : case-insensitive hotel-name substring (absent -> all).
+        // ?facility=<id>&facility=<id> : keep only hotels that have ALL the given facilities.
+        // ?checkIn=&checkOut=&guests= : keep only hotels with a room free for the dates (yyyy-MM-dd).
+        // ?page= (0-based) & ?size= : pagination (defaults 0 / 10, size capped at 100).
+        String search = request.queryParam("search").orElse(null);
+        List<String> facilities = request.queryParams().getOrDefault("facility", List.of());
+        final int page;
+        final int size;
+        final LocalDate checkIn;
+        final LocalDate checkOut;
+        final Integer guests;
+        try {
+            page = request.queryParam("page").map(Integer::parseInt).orElse(0);
+            size = request.queryParam("size").map(Integer::parseInt).orElse(10);
+            guests = request.queryParam("guests").map(Integer::parseInt).orElse(null);
+            checkIn = request.queryParam("checkIn").map(LocalDate::parse).orElse(null);
+            checkOut = request.queryParam("checkOut").map(LocalDate::parse).orElse(null);
+        } catch (NumberFormatException e) {
+            return exceptionHandler.handle(new ValidationException("page, size and guests must be integers"));
+        } catch (DateTimeParseException e) {
+            return exceptionHandler.handle(new ValidationException("checkIn/checkOut must be dates (yyyy-MM-dd)"));
+        }
+        return hotelUseCase.findAll(search, facilities, checkIn, checkOut, guests, page, size)
+                .flatMap(result -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(result))
+                .onErrorResume(exceptionHandler::handle);
+    }
+
+    // ─────────────────────────────── Owner / Admin lists ─────────────────────
+
+    public Mono<ServerResponse> getOwnerHotels(ServerRequest request) {
+        return request.principal()
+                .switchIfEmpty(Mono.error(new ValidationException("Authentication required")))
+                .flatMap(principal -> hotelUseCase.findOwnerHotels(principal.getName()))
+                .flatMap(result -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(result))
+                .onErrorResume(exceptionHandler::handle);
+    }
+
+    public Mono<ServerResponse> getAdminHotels(ServerRequest request) {
+        return hotelUseCase.findAdminHotels()
                 .flatMap(result -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(result))

@@ -8,28 +8,35 @@ info:
     Routes are nested under an `Accept: application/json` predicate, so every request must
     send the `Accept: application/json` header.
 
-    ## Authorization (data-driven RBAC)
+    ## Authorization (data-driven RBAC + ownership)
     Send the JWT from `POST /auth/login` as `Authorization: Bearer <token>`. Every endpoint is
     authorized by role against the `permission` / `role_permission` / `role` tables (the
-    `RbacFilter`); Spring Security only authenticates the token. Authorization is **purely
-    role-based — there is no resource ownership check**, so a HOTEL_OWNER may manage *any*
-    hotel, not only ones they created. Access rules:
+    `RbacFilter`); Spring Security only authenticates the token. Endpoints flagged
+    `requires_ownership` additionally require a **HOTEL_OWNER to own the `{hotelId}` in the path**
+    (recorded in `khotel_hotel_owner`); **ADMIN bypasses the ownership check** and manages every
+    hotel. So a HOTEL_OWNER manages only their own hotels' rooms, images, facility assignments,
+    bookings, and dashboard. Access rules:
     - **Public (no token):** register, login, `GET /hotel`, `GET /hotel/{hotelId}`, its rooms
-      (`GET .../room`, `GET .../room/{roomId}`), and `GET .../availability`. A USER can browse
-      hotels/rooms and **book** a room, but cannot create/update/delete hotels.
+      (`GET .../room`, `GET .../room/{roomId}`), `GET .../availability`, and all **facility
+      reads** — the catalog (`GET /facility`, `/facility/{id}`) and the hotel/room facility lists
+      (`GET /hotel/{id}/facility`, `GET /hotel/{id}/room/{id}/facility`) — so visitors can see
+      amenities before booking. Facilities are also **embedded** in hotel and room responses.
+      A USER can browse hotels/rooms and **book** a room, but cannot create/update/delete hotels.
     - **USER (any authenticated user):** `POST .../booking` (booking requires login),
       `GET /auth/me`, `GET /auth/profile`.
-    - **HOTEL_OWNER or ADMIN:** create/update/delete hotels and rooms; all image and
-      facility-assignment endpoints (reads included) under `/hotel/{hotelId}/**` and `/image/...`;
-      booking management (list/get/cancel). **Image and facility endpoints are hidden from USER.**
-      The facility **catalog** reads (`GET /facility`, `/facility/{id}`) are visible to any
-      HOTEL_OWNER or ADMIN.
+    - **HOTEL_OWNER (own hotels) or ADMIN (any):** create hotels; update/delete a hotel and its
+      rooms; all **image** endpoints (reads included) and facility **assignment writes**
+      (assign/remove) under `/hotel/{hotelId}/**` and `/image/...`; booking management
+      (list/get/cancel); and the **hotel dashboard** (`GET /hotel/{hotelId}/dashboard`). A
+      HOTEL_OWNER is restricted to hotels they own; ADMIN is not. **Image endpoints remain hidden
+      from USER;** facility reads are public (above). (`POST /hotel` has no owner check — the
+      creator is recorded as owner.)
     - **ADMIN only:** facility catalog writes (`POST/PUT/DELETE /facility`), user management
       (`/user/**`, promote).
 
-    Creating a hotel still records the creator in `khotel_hotel_owner` (for future ownership
-    enforcement), but that table is not consulted today. Endpoints below marked with the lock
-    (`security: bearerAuth`) require a token; the role rules above are enforced server-side.
+    Creating a hotel records the creator in `khotel_hotel_owner`, which is what the ownership
+    check consults. Endpoints below marked with the lock (`security: bearerAuth`) require a token;
+    the role + ownership rules above are enforced server-side.
   version: 1.0.0
 servers:
   - url: http://localhost:9090/api/v1
@@ -47,8 +54,165 @@ tags:
     description: Date-aware room-type bookings. Availability is computed (total_units − overlapping non-cancelled units), not a stored counter.
   - name: Auth
     description: Registration, login (JWT), current user, and admin user management (RBAC).
+  - name: Dashboard
+    description: Owner/admin hotel dashboard and the admin platform-wide dashboard.
 
 paths:
+  /welcome:
+    get:
+      tags: [Auth]
+      summary: Welcome / smoke test (public)
+      description: No auth, no DB. Returns a static payload for health/smoke checks.
+      operationId: welcome
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Welcome to the Kaptai Tourist API" }
+                  status: { type: string, example: "UP" }
+
+  /auth/register-owner:
+    post:
+      tags: [Auth]
+      summary: Register as a hotel owner (public)
+      description: >-
+        Creates a USER and files a PENDING owner-enlistment request. HOTEL_OWNER is NOT granted
+        until an admin approves. 409 if the email/mobile already exists.
+      operationId: registerOwner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, hotelName]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                mobile: { type: string }
+                gender: { type: string, enum: [MALE, FEMALE] }
+                password: { type: string, format: password, minLength: 6 }
+                hotelName: { type: string }
+                message: { type: string, nullable: true }
+      responses:
+        '201': { description: Request filed. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /owner-request:
+    get:
+      tags: [Auth]
+      summary: List owner-enlistment requests (admin)
+      description: Lists requests, newest first, joined with requester name/email. Optional status filter.
+      operationId: listOwnerRequests
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+      responses:
+        '200': { description: Requests. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /owner-request/{requestId}/approve:
+    post:
+      tags: [Auth]
+      summary: Approve an owner request (admin)
+      description: Grants HOTEL_OWNER to the requester and marks the request APPROVED. 409 if already decided.
+      operationId: approveOwnerRequest
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Approved. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /owner-request/{requestId}/reject:
+    post:
+      tags: [Auth]
+      summary: Reject an owner request (admin)
+      description: Marks the request REJECTED. 409 if already decided.
+      operationId: rejectOwnerRequest
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Rejected. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /owner/hotel:
+    get:
+      tags: [Hotel]
+      summary: The caller's own hotels (owner/admin)
+      description: Hotels owned by the authenticated user (via khotel_hotel_owner), enriched with rooms/images/facilities.
+      operationId: getOwnerHotels
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Hotels.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HotelListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/hotel:
+    get:
+      tags: [Hotel]
+      summary: All hotels for admin oversight (admin)
+      description: Every hotel with its owners (name/email) and room-type/booking counts. No image enrichment.
+      operationId: getAdminHotels
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Hotels. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /image/{hotelId}/{imageId}/primary:
+    post:
+      tags: [Image]
+      summary: Set the hotel's cover image (owner/admin)
+      description: Marks this hotel-gallery image primary, unsetting any prior primary (transactional).
+      operationId: setHotelImagePrimary
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: hotelId, in: path, required: true, schema: { type: string } }
+        - { name: imageId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Primary updated. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /hotel/{hotelId}/room/{roomId}/image/{imageId}/primary:
+    post:
+      tags: [Image]
+      summary: Set a room's cover image (owner/admin)
+      description: Marks this room image primary, unsetting any prior primary for the room (transactional).
+      operationId: setRoomImagePrimary
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: hotelId, in: path, required: true, schema: { type: string } }
+        - { name: roomId, in: path, required: true, schema: { type: string } }
+        - { name: imageId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Primary updated. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /hotel:
     post:
       tags:
@@ -89,8 +253,75 @@ paths:
     get:
       tags:
         - Hotel
-      summary: List all hotels
+      summary: List hotels (paginated, filterable)
+      description: >-
+        Lists hotels, paginated. Filter by `search` (case-insensitive name substring), `facility`
+        (repeatable; keeps only hotels that have **all** the given hotel-level facilities), and/or a
+        date window `checkIn`/`checkOut` (+ optional `guests`) that keeps only hotels with **≥1 room
+        free for those dates**. Filters combine (AND). Public.
       operationId: getAllHotels
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Case-insensitive substring to match against hotel name. Omitted or blank returns all hotels.
+          schema:
+            type: string
+          example: lakeside
+        - name: facility
+          in: query
+          required: false
+          description: >-
+            Facility id to require. Repeatable — `?facility=<id1>&facility=<id2>` returns only hotels
+            that have **all** listed facilities assigned at hotel level (ALL-match).
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          example: ["11111111-aaaa-...", "22222222-bbbb-..."]
+        - name: checkIn
+          in: query
+          required: false
+          description: Stay start (yyyy-MM-dd). Must be sent with checkOut; both enable the availability filter.
+          schema:
+            type: string
+            format: date
+          example: "2026-08-01"
+        - name: checkOut
+          in: query
+          required: false
+          description: Stay end (yyyy-MM-dd, after checkIn).
+          schema:
+            type: string
+            format: date
+          example: "2026-08-04"
+        - name: guests
+          in: query
+          required: false
+          description: Minimum room capacity required (defaults to 1). Only meaningful with the date filter.
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page
+          in: query
+          required: false
+          description: Zero-based page index.
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          required: false
+          description: Page size (capped at 100).
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
       responses:
         '200':
           description: Hotels retrieved successfully.
@@ -510,6 +741,40 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /auth/change-password:
+    post:
+      tags:
+        - Auth
+      summary: Change your own password
+      description: >-
+        Self-service password change for any authenticated user (USER / HOTEL_OWNER / ADMIN).
+        Verifies `currentPassword` before setting `newPassword` (min 6 chars, must differ from the
+        current one). Note: existing JWTs remain valid until they expire (no token revocation yet).
+      operationId: changePassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Password changed successfully" }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Not authenticated, or current password incorrect.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /user:
     get:
       tags:
@@ -598,8 +863,6 @@ paths:
         - Facility
       summary: List all facilities (catalog)
       operationId: getAllFacilities
-      security:
-        - bearerAuth: []
       responses:
         '200':
           description: Facilities retrieved.
@@ -616,8 +879,6 @@ paths:
         - Facility
       summary: Get a facility by id
       operationId: getFacilityById
-      security:
-        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/FacilityId'
       responses:
@@ -717,8 +978,6 @@ paths:
         - Facility
       summary: List a hotel's facilities
       operationId: getHotelFacilities
-      security:
-        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/HotelId'
       responses:
@@ -792,8 +1051,6 @@ paths:
         - Facility
       summary: List a room's facilities
       operationId: getRoomFacilities
-      security:
-        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/HotelId'
         - $ref: '#/components/parameters/RoomId'
@@ -981,6 +1238,62 @@ paths:
                 $ref: '#/components/schemas/BookingResponse'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hotel/{hotelId}/dashboard:
+    get:
+      tags:
+        - Dashboard
+      summary: Hotel dashboard (owner/admin)
+      description: >-
+        Live aggregate snapshot for a hotel: rooms available/booked tonight and occupancy, upcoming
+        bookings with today's arrivals/departures and cancellations, upcoming revenue, facilities
+        assigned/unavailable, and hotel image count. Requires HOTEL_OWNER (owning this hotel) or ADMIN.
+      security:
+        - bearerAuth: []
+      operationId: getHotelDashboard
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '200':
+          description: Dashboard retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/dashboard:
+    get:
+      tags:
+        - Dashboard
+      summary: Platform dashboard (admin only)
+      description: >-
+        Cross-hotel overview for admins: totals (hotels, owners, users, facilities), rooms
+        booked/available tonight with occupancy, upcoming bookings with today's arrivals/departures
+        and cancellations, and upcoming revenue — all summed across every hotel. Requires ADMIN.
+      security:
+        - bearerAuth: []
+      operationId: getAdminDashboard
+      responses:
+        '200':
+          description: Platform dashboard retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboardResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -1471,18 +1784,32 @@ components:
           type: string
           format: date-time
           nullable: true
+        coverImageUrl:
+          type: string
+          nullable: true
+          description: >-
+            Derived single image for list/grid views: the first primary hotel-level image, else the
+            first by display order; prefers the thumbnail URL, falling back to the full image URL.
+            Null when the hotel has no hotel-level images.
+          example: https://<project>.supabase.co/storage/v1/object/public/kaptai/uuid_thumb.jpg
         images:
           type: array
           nullable: true
-          description: Hotel images. Not yet embedded in responses (currently null).
+          description: Hotel-level images (room_id IS NULL), ordered by display order.
           items:
             $ref: '#/components/schemas/Image'
+        facilities:
+          type: array
+          nullable: true
+          description: The hotel's assigned facilities (amenity + per-offering charge/notes). Publicly readable.
+          items:
+            $ref: '#/components/schemas/AssignedFacility'
         rooms:
           type: array
           nullable: true
-          description: Hotel rooms. Not yet embedded in responses (currently null).
+          description: Hotel rooms, each with its own embedded images and facilities.
           items:
-            type: object
+            $ref: '#/components/schemas/Room'
 
     HotelRequest:
       type: object
@@ -1538,11 +1865,25 @@ components:
         message:
           type: string
           example: "Hotels retrieved successfully"
+        page:
+          type: integer
+          description: Zero-based index of the returned page.
+          example: 0
+        size:
+          type: integer
+          description: Page size used.
+          example: 10
         totalRecords:
           type: integer
-          example: 2
+          format: int64
+          description: Total hotels matching the filter across all pages.
+          example: 42
+        totalPages:
+          type: integer
+          example: 3
         hotelData:
           type: array
+          description: The hotels on this page (each enriched with images, facilities, rooms, coverImageUrl).
           items:
             $ref: '#/components/schemas/Hotel'
 
@@ -1619,6 +1960,11 @@ components:
           description: The room's images, ordered by display order. Empty for a room with no images.
           items:
             $ref: '#/components/schemas/Image'
+        facilities:
+          type: array
+          description: The room's assigned facilities (amenity + per-offering charge/notes). Publicly readable.
+          items:
+            $ref: '#/components/schemas/AssignedFacility'
 
     RoomRequest:
       type: object
@@ -1797,6 +2143,10 @@ components:
           type: boolean
           description: Whether this offering is free. Defaults to true.
           example: true
+        isAvailable:
+          type: boolean
+          description: Defaults to true. Set false to mark the facility temporarily unavailable at this hotel/room (e.g. pool closed).
+          example: true
         additionalCharge:
           type: number
           format: double
@@ -1819,6 +2169,10 @@ components:
         isComplimentary:
           type: boolean
           example: true
+        isAvailable:
+          type: boolean
+          description: False = offered but temporarily unavailable at this hotel/room.
+          example: true
         additionalCharge:
           type: number
           format: double
@@ -1827,6 +2181,92 @@ components:
         notes:
           type: string
           nullable: true
+
+    DashboardResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Dashboard retrieved successfully"
+        hotelId:
+          type: string
+          example: "1111"
+        asOf:
+          type: string
+          format: date
+          description: The date the "tonight"/"today" figures are computed for.
+          example: "2026-07-01"
+        rooms:
+          type: object
+          properties:
+            roomTypes: { type: integer, example: 5 }
+            totalUnits: { type: integer, example: 32 }
+            bookedTonight: { type: integer, example: 21 }
+            availableTonight: { type: integer, example: 11 }
+            occupancyPct: { type: number, format: double, example: 65.6 }
+        bookings:
+          type: object
+          properties:
+            upcoming: { type: integer, example: 18 }
+            arrivalsToday: { type: integer, example: 3 }
+            departuresToday: { type: integer, example: 2 }
+            cancelled: { type: integer, example: 4 }
+        revenue:
+          type: object
+          properties:
+            upcoming:
+              type: number
+              description: Sum of total_price for upcoming CONFIRMED bookings.
+              example: 240000.00
+        facilities:
+          type: object
+          properties:
+            assigned: { type: integer, example: 8 }
+            unavailable:
+              type: integer
+              description: Assigned facilities marked unavailable at this hotel (link is_available=false) or whose catalog entry is inactive.
+              example: 1
+        media:
+          type: object
+          properties:
+            hotelImages: { type: integer, example: 6 }
+
+    AdminDashboardResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Admin dashboard retrieved successfully"
+        asOf:
+          type: string
+          format: date
+          example: "2026-07-01"
+        platform:
+          type: object
+          properties:
+            hotels: { type: integer, example: 42 }
+            owners: { type: integer, description: Distinct users owning ≥1 hotel, example: 15 }
+            users: { type: integer, example: 1280 }
+            facilities: { type: integer, example: 24 }
+        rooms:
+          type: object
+          properties:
+            roomTypes: { type: integer, example: 310 }
+            totalUnits: { type: integer, example: 1840 }
+            bookedTonight: { type: integer, example: 1120 }
+            availableTonight: { type: integer, example: 720 }
+            occupancyPct: { type: number, format: double, example: 60.9 }
+        bookings:
+          type: object
+          properties:
+            upcoming: { type: integer, example: 940 }
+            arrivalsToday: { type: integer, example: 130 }
+            departuresToday: { type: integer, example: 118 }
+            cancelled: { type: integer, example: 76 }
+        revenue:
+          type: object
+          properties:
+            upcoming: { type: number, example: 8420000.00 }
 
     AssignedFacilityResponse:
       type: object
@@ -2039,18 +2479,38 @@ components:
 
     LoginRequest:
       type: object
+      description: Provide `email` OR `mobile`, plus `password`.
       required:
-        - email
         - password
       properties:
         email:
           type: string
           format: email
           example: "rafiyad@example.com"
+        mobile:
+          type: string
+          example: "+8801700000000"
         password:
           type: string
           format: password
           example: "secret123"
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          example: "secret123"
+        newPassword:
+          type: string
+          format: password
+          minLength: 6
+          description: At least 6 characters; must differ from the current password.
+          example: "newSecret456"
 
     AuthResponse:
       type: object
