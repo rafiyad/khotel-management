@@ -88,6 +88,12 @@ public class UserAdapter implements UserPort {
                                 .then()));
     }
 
+    @Override
+    public Mono<Void> deleteById(String id) {
+        return userRepository.deleteById(id)
+                .doOnError(e -> log.error("Error deleting user {}: {}", id, e.getMessage()));
+    }
+
     private Mono<User> withRoles(User user) {
         return userRoleRepository.findRoleNamesByUserId(user.getId())
                 .collectList()

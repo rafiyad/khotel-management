@@ -13,4 +13,5 @@ public interface UserPort {
     Mono<User> findById(String id);                     // populated with roles
     Flux<User> findAll();                               // populated with roles
     Mono<Void> assignRole(String userId, String roleName); // idempotent; errors if role name unknown
+    Mono<Void> deleteById(String id);                       // hard delete; used to compensate a failed mirror create
 }
