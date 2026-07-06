@@ -70,6 +70,20 @@ databaseChangeLog:
             path: db/changelog/create-rbac-tables.sql
             relativeToChangelogFile: false
   - changeSet:
+      id: alter-user-password-nullable
+      author: tashfi
+      changes:
+        - sqlFile:
+            path: db/changelog/alter-user-password-nullable.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: seed-supabase-auth-permissions
+      author: tashfi
+      changes:
+        - sqlFile:
+            path: db/changelog/seed-supabase-auth-permissions.sql
+            relativeToChangelogFile: false
+  - changeSet:
       id: sample-khotel_hotel-data
       author: rafiyad
       changes:

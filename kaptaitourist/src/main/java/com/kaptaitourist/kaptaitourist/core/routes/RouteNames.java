@@ -2,6 +2,10 @@ package com.kaptaitourist.kaptaitourist.core.routes;
 
 public class RouteNames {
     public static final String BASE_URL = "/api/v1";
+    public static final String REGISTER = "/register";
+    public static final String LOGIN = "/login";
+    public static final String FORGOT_PASSWORD = "/forgotpassword";
+    public static final String RESET_PASSWORD = "/resetpassword";
     public static final String IMAGE = "/image";
     public static final String HOTEL = "/hotel";
     public static final String ROOM = "/room";
@@ -11,6 +15,7 @@ public class RouteNames {
     public static final String CANCEL = "/cancel";
     public static final String DASHBOARD = "/dashboard";
     public static final String AUTH = "/auth";
+    public static final String SUPABASE = "/supabase";
     public static final String USER = "/user";
     public static final String ADMIN = "/admin";
     public static final String OWNER = "/owner";
