@@ -130,9 +130,3 @@ This repository is the **backend service**. It was also ported to a wire-compati
 - Email: rafiyad.celloscope@gmail.com
 - GitHub: [github.com/rafiyad](https://github.com/rafiyad/)
 - LinkedIn: [linkedin.com/in/rafiyad-darazat](https://www.linkedin.com/in/rafiyad-darazat/)
-
----
-
-## License
-
-Released under the **MIT License** — see [`LICENSE`](kaptaitourist/LICENSE).
