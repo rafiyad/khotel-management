@@ -135,6 +135,10 @@ public class SupabaseAuthService implements SupabaseUserUseCase {
             return Mono.error(new ValidationException("email is not a valid email address"));
 
         return supabaseAuthPort.recover(dto.getEmail().trim().toLowerCase())
+                .onErrorResume(ex -> {
+                    log.warn("Supabase recover failed for {}: {}", dto.getEmail(), ex.getMessage());
+                    return Mono.empty(); // swallow — don't leak infra errors to client
+                })
                 .thenReturn(MessageResponse.builder()
                         .message("If an account exists for that email, a reset code has been sent.")
                         .build());
@@ -144,20 +148,16 @@ public class SupabaseAuthService implements SupabaseUserUseCase {
 
     @Override
     public Mono<MessageResponse> resetPassword(ResetPasswordRequestDto dto) {
-        if (dto.getEmail() == null || dto.getEmail().isBlank())
-            return Mono.error(new ValidationException("email is required"));
-        if (dto.getToken() == null || dto.getToken().isBlank())
-            return Mono.error(new ValidationException("token is required"));
+        if (dto.getAccessToken() == null || dto.getAccessToken().isBlank())
+            return Mono.error(new ValidationException("accessToken is required"));
         if (dto.getNewPassword() == null || dto.getNewPassword().length() < 6)
             return Mono.error(new ValidationException("newPassword must be at least 6 characters"));
 
-        String email = dto.getEmail().trim().toLowerCase();
-        return supabaseAuthPort.verifyRecoveryOtp(email, dto.getToken().trim())
-                .flatMap(session -> supabaseAuthPort.updatePassword(session.getAccessToken(), dto.getNewPassword()))
+        return supabaseAuthPort.updatePassword(dto.getAccessToken(), dto.getNewPassword())
                 .thenReturn(MessageResponse.builder()
                         .message("Password has been reset. You can now log in with your new password.")
                         .build())
-                .doOnSuccess(r -> log.info("Password reset (supabase) for {}", email));
+                .doOnSuccess(r -> log.info("Password reset via magic link"));
     }
 
     // ----------------------------------- Helpers ------------------------------------------
